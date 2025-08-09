@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Kiwi Flight Scraper con Monitoreo Automático
 
 Sistema completo de monitoreo de vuelos que utiliza la API GraphQL no documentada de Kiwi.com para encontrar vuelos baratos y **enviar alertas automáticas por Telegram** cuando los precios bajan.
@@ -435,3 +436,6 @@ echo $ENABLE_MONITORING  # debe ser 'true'
 4. **Variables de entorno** completas
 
 **¡Tu sistema de monitoreo automático de vuelos está listo para encontrar las mejores ofertas!** 🛫✨
+=======
+# flight-hunter
+>>>>>>> 1de4dc37ad050a5c79c067f7ccc911f4739584ec
