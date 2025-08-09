@@ -10,6 +10,22 @@ if (process.env.NODE_ENV !== 'production') {
 	require('dotenv').config();
 }
 
+console.log('🔧 Environment Debug:');
+console.log('  NODE_ENV:', process.env.NODE_ENV);
+console.log('  PORT:', process.env.PORT);
+console.log(
+	'  MONGODB_URI:',
+	process.env.MONGODB_URI ? 'CONFIGURADO' : 'NO CONFIGURADO'
+);
+console.log(
+	'  TELEGRAM_BOT_TOKEN:',
+	process.env.TELEGRAM_BOT_TOKEN ? 'CONFIGURADO' : 'NO CONFIGURADO'
+);
+console.log(
+	'  KIWI_UMBRELLA_TOKEN:',
+	process.env.KIWI_UMBRELLA_TOKEN ? 'CONFIGURADO' : 'NO CONFIGURADO'
+);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
