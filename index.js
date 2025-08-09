@@ -1,10 +1,10 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const KiwiService = require('./services/kiwi.service');
-const MonitoringService = require('./services/monitoring.service');
-const TelegramService = require('./services/telegram.service');
-const Flight = require('./models/flight.model');
-const RouteMonitor = require('./models/routeMonitor.models');
+const KiwiService = require('./src/services/kiwi.service');
+const MonitoringService = require('./src/services/monitoring.service');
+const TelegramService = require('./src/services/telegram.service');
+const Flight = require('./src/models/flight.model');
+const RouteMonitor = require('./src/models/routeMonitor.models');
 require('dotenv').config();
 
 const app = express();

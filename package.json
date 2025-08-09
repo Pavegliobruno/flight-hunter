@@ -2,10 +2,10 @@
     "name": "kiwi-flight-scraper",
     "version": "1.0.0",
     "description": "Scraper de vuelos usando la API GraphQL de Kiwi",
-    "main": "src/index.js",
+    "main": "index.js",
     "scripts": {
-        "start": "node src/index.js",
-        "dev": "nodemon src/index.js"
+        "start": "node index.js",
+        "dev": "nodemon index.js"
     },
     "engines": {
         "node": "18.x"
