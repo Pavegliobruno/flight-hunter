@@ -5,7 +5,10 @@ const MonitoringService = require('./src/services/monitoring.service');
 const TelegramService = require('./src/services/telegram.service');
 const Flight = require('./src/models/flight.model');
 const RouteMonitor = require('./src/models/routeMonitor.models');
-require('dotenv').config();
+
+if (process.env.NODE_ENV !== 'production') {
+	require('dotenv').config();
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
