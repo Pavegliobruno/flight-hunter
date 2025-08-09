@@ -4,7 +4,7 @@
     "description": "Scraper de vuelos usando la API GraphQL de Kiwi",
     "main": "index.js",
     "scripts": {
-        "start": "node index.js",
+        "start": "node src/index.js",
         "dev": "nodemon src/index.js"
     },
     "engines": {
