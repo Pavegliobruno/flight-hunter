@@ -1,0 +1,9 @@
+# Crear/actualizar .gitignore
+cat > .gitignore << EOF
+node_modules/
+.env
+*.log
+.DS_Store
+dist/
+build/
+EOF
