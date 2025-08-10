@@ -527,6 +527,35 @@ class KiwiService {
 			SCL: 'City:santiago_cl',
 			LIM: 'City:lima_pe',
 			BOG: 'City:bogota_co',
+
+			// JAPÓN
+			NRT: 'Airport:tokyo-narita_jp',
+			HND: 'Airport:tokyo-haneda_jp',
+			KIX: 'Airport:osaka-kansai_jp',
+			NGO: 'Airport:nagoya-chubu_jp',
+			FUK: 'Airport:fukuoka_jp',
+			SPK: 'Airport:sapporo-chitose_jp',
+			ITM: 'Airport:osaka-itami_jp',
+			KMI: 'Airport:miyazaki_jp',
+			HIJ: 'Airport:hiroshima_jp',
+			OKA: 'Airport:okinawa-naha_jp',
+
+			// OTROS DESTINOS ASIÁTICOS POPULARES
+			ICN: 'Airport:seoul-incheon_kr', // Seúl, Corea del Sur
+			GMP: 'Airport:seoul-gimpo_kr', // Seúl Gimpo
+			PVG: 'Airport:shanghai-pudong_cn', // Shanghai, China
+			PEK: 'Airport:beijing-capital_cn', // Beijing, China
+			HKG: 'Airport:hong-kong_hk', // Hong Kong
+			SIN: 'Airport:singapore-changi_sg', // Singapur
+			BKK: 'Airport:bangkok-suvarnabhumi_th', // Bangkok, Tailandia
+			KUL: 'Airport:kuala-lumpur_my', // Kuala Lumpur, Malasia
+			CGK: 'Airport:jakarta-soekarno-hatta_id', // Jakarta, Indonesia
+			MNL: 'Airport:manila_ph', // Manila, Filipinas
+
+			// OCEANÍA
+			SYD: 'Airport:sydney-kingsford-smith_au', // Sydney, Australia
+			MEL: 'Airport:melbourne_au', // Melbourne, Australia
+			AKL: 'Airport:auckland_nz', // Auckland, Nueva Zelanda
 		};
 
 		const formatted = cityMapping[code.toUpperCase()];
