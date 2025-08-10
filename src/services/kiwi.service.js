@@ -516,6 +516,7 @@ class KiwiService {
 			VIE: 'Airport:vienna_at',
 			LIS: 'City:lisbon_pt',
 			MXP: 'Airport:milan-malpensa_it',
+			BER: 'City:berlin_de', // ✅ Berlin (todos los aeropuertos)
 
 			// Americas
 			MIA: 'City:miami_us',
