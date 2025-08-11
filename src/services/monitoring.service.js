@@ -133,75 +133,138 @@ class MonitoringService {
 			this.stats.checksToday++;
 			routeMonitor.lastChecked = new Date();
 
-			// Generar fechas a buscar (si es flexible, busca varios días)
-			const searchDates = this.generateSearchDates(routeMonitor.dateRange);
+			// Obtener fechas de búsqueda usando el nuevo método
+			const searchDates = routeMonitor.getSearchDates();
 
 			let allFlights = [];
 			let bestPrice = null;
 
-			// Buscar vuelos para cada fecha
-			// Buscar vuelos para cada fecha
-			for (const date of searchDates) {
-				try {
-					// 🔧 FIX: Determinar si es ida y vuelta basado en el dateRange
-					const isRoundTrip =
-						routeMonitor.dateRange.startDate !== routeMonitor.dateRange.endDate;
+			//  Buscar combinaciones de ida y vuelta
+			if (
+				routeMonitor.flightType === 'roundtrip' &&
+				searchDates.inbound.length > 0
+			) {
+				// Buscar todas las combinaciones de ida y vuelta
+				for (const outboundDate of searchDates.outbound) {
+					for (const inboundDate of searchDates.inbound) {
+						try {
+							const searchParams = {
+								origin: routeMonitor.origin,
+								destination: routeMonitor.destination,
+								departureDate: outboundDate,
+								returnDate: inboundDate,
+								passengers: routeMonitor.passengers,
+							};
 
-					const searchParams = {
-						origin: routeMonitor.origin,
-						destination: routeMonitor.destination,
-						departureDate: date,
-						passengers: routeMonitor.passengers,
-						// 🔧 FIX: Agregar returnDate si es ida y vuelta
-						...(isRoundTrip && {returnDate: routeMonitor.dateRange.endDate}),
-					};
+							const rawData =
+								await this.kiwiService.searchFlights(searchParams);
+							const flights = this.kiwiService.parseFlightData(
+								rawData,
+								searchParams
+							);
 
-					// 🔧 DEBUG: Mostrar qué parámetros se están enviando
-					console.log(`  🔍 Buscando vuelos para ${date}:`, {
-						origin: searchParams.origin,
-						destination: searchParams.destination,
-						departureDate: searchParams.departureDate,
-						returnDate: searchParams.returnDate || 'SOLO IDA',
-						passengers: searchParams.passengers,
-					});
+							if (flights && flights.length > 0) {
+								allFlights.push(...flights);
 
-					const rawData = await this.kiwiService.searchFlights(searchParams);
-					const flights = this.kiwiService.parseFlightData(
-						rawData,
-						searchParams
-					);
+								const cheapestFlight = flights.reduce((min, flight) =>
+									flight.price.amount < min.price.amount ? flight : min
+								);
 
-					if (flights && flights.length > 0) {
-						allFlights.push(...flights);
+								if (
+									!bestPrice ||
+									cheapestFlight.price.amount < bestPrice.price.amount
+								) {
+									bestPrice = cheapestFlight;
+								}
+							}
 
-						// Encontrar el mejor precio
-						const cheapestFlight = flights.reduce((min, flight) =>
-							flight.price.amount < min.price.amount ? flight : min
-						);
-
-						if (
-							!bestPrice ||
-							cheapestFlight.price.amount < bestPrice.price.amount
-						) {
-							bestPrice = cheapestFlight;
+							await this.delay(2000);
+						} catch (error) {
+							console.error(
+								`  ❌ Error buscando ${outboundDate} → ${inboundDate}:`,
+								error.message
+							);
 						}
 					}
+				}
+			} else {
+				// Solo ida - buscar cada fecha de salida
+				for (const outboundDate of searchDates.outbound) {
+					try {
+						console.log(`  🔍 Buscando solo ida: ${outboundDate}`);
 
-					// Pequeño delay entre fechas
-					await this.delay(2000);
-				} catch (error) {
-					console.error(`  ❌ Error buscando fecha ${date}:`, error.message);
+						const searchParams = {
+							origin: routeMonitor.origin,
+							destination: routeMonitor.destination,
+							departureDate: outboundDate,
+							passengers: routeMonitor.passengers,
+						};
+
+						const rawData = await this.kiwiService.searchFlights(searchParams);
+						const flights = this.kiwiService.parseFlightData(
+							rawData,
+							searchParams
+						);
+
+						if (flights && flights.length > 0) {
+							allFlights.push(...flights);
+
+							const cheapestFlight = flights.reduce((min, flight) =>
+								flight.price.amount < min.price.amount ? flight : min
+							);
+
+							if (
+								!bestPrice ||
+								cheapestFlight.price.amount < bestPrice.price.amount
+							) {
+								bestPrice = cheapestFlight;
+							}
+						}
+
+						// Pequeño delay entre fechas
+						await this.delay(2000);
+					} catch (error) {
+						console.error(
+							`  ❌ Error buscando fecha ${outboundDate}:`,
+							error.message
+						);
+					}
 				}
 			}
 
-			// Guardar vuelos en la DB
 			if (allFlights.length > 0) {
 				await this.saveFlights(allFlights);
 			}
 
-			// Actualizar estadísticas de la ruta
-			const prices = allFlights.map((f) => f.price);
-			routeMonitor.updateStats(prices);
+			// 🔥 FIX: Actualizar estadísticas con validación
+			if (allFlights.length > 0) {
+				// Extraer solo los precios válidos
+				const validPrices = allFlights
+					.map((f) => f.price)
+					.filter((price) => {
+						return (
+							price &&
+							!isNaN(price.amount) &&
+							isFinite(price.amount) &&
+							price.amount > 0 &&
+							price.amount < 10000
+						);
+					});
+
+				console.log(`📊 Precios válidos encontrados: ${validPrices.length}`);
+
+				if (validPrices.length > 0) {
+					routeMonitor.updateStats(validPrices);
+				} else {
+					console.log('📊 No hay precios válidos para actualizar stats');
+					// Solo incrementar el contador de checks
+					routeMonitor.stats.totalChecks += 1;
+				}
+			} else {
+				console.log('📊 No se encontraron vuelos');
+				// Solo incrementar el contador de checks
+				routeMonitor.stats.totalChecks += 1;
+			}
 
 			// Verificar si debe enviar alerta
 			if (bestPrice && routeMonitor.shouldAlert(bestPrice)) {
@@ -227,46 +290,48 @@ class MonitoringService {
 				}
 			}
 
-			// Guardar cambios en la ruta
-			await routeMonitor.save();
+			//  Guardar con manejo de errores
+			try {
+				await routeMonitor.save();
+			} catch (saveError) {
+				console.error(`❌ Error guardando monitor:`, saveError.message);
+
+				// Si el error es por stats inválidos, resetear y volver a intentar
+				if (
+					saveError.message.includes('averagePrice') ||
+					saveError.message.includes('NaN')
+				) {
+					console.log('🔧 Reseteando stats corruptos...');
+					routeMonitor.stats.averagePrice = undefined;
+					routeMonitor.stats.lowestPrice = undefined;
+					routeMonitor.stats.highestPrice = undefined;
+
+					try {
+						await routeMonitor.save();
+						console.log('✅ Monitor guardado después de resetear stats');
+					} catch (retryError) {
+						console.error(
+							`❌ Error después de resetear stats:`,
+							retryError.message
+						);
+						throw retryError;
+					}
+				} else {
+					throw saveError;
+				}
+			}
 
 			const resultMsg = bestPrice
 				? `€${bestPrice.price.amount} ${bestPrice.price.amount <= routeMonitor.priceThreshold ? '🔥' : ''}`
 				: 'No se encontraron vuelos';
 
-			console.log(`  ✅ ${routeMonitor.name}: ${resultMsg}`);
+			console.log(
+				`  ✅ ${routeMonitor.name}: ${resultMsg} (${allFlights.length} vuelos encontrados)`
+			);
 		} catch (error) {
 			console.error(`❌ Error en checkRoute para ${routeMonitor.name}:`, error);
 			throw error;
 		}
-	}
-
-	generateSearchDates(dateRange) {
-		const dates = [];
-		const start = new Date(dateRange.startDate);
-		const end = new Date(dateRange.endDate);
-
-		if (dateRange.flexible) {
-			// Si es flexible, buscar algunas fechas específicas
-			const diffTime = Math.abs(end - start);
-			const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-			// Buscar máximo 5 fechas distribuidas en el rango
-			const step = Math.max(1, Math.floor(diffDays / 5));
-
-			for (let i = 0; i <= diffDays; i += step) {
-				const date = new Date(start);
-				date.setDate(start.getDate() + i);
-				dates.push(date.toISOString().split('T')[0]);
-
-				if (dates.length >= 5) break; // Máximo 5 fechas por request
-			}
-		} else {
-			// Si no es flexible, solo la fecha específica
-			dates.push(dateRange.startDate);
-		}
-
-		return dates;
 	}
 
 	async saveFlights(flights) {
@@ -278,7 +343,6 @@ class MonitoringService {
 				await flight.save();
 				savedCount++;
 			} catch (error) {
-				// Ignorar duplicados (error 11000)
 				if (error.code !== 11000) {
 					console.error('Error guardando vuelo:', error.message);
 				}
@@ -342,7 +406,6 @@ class MonitoringService {
 		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
-	// Método para obtener estadísticas actuales
 	getStats() {
 		return {
 			...this.stats,

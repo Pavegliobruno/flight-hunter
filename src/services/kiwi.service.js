@@ -3,7 +3,6 @@ require('dotenv').config();
 
 class KiwiService {
 	constructor() {
-		// URL correcta según lo que viste en DevTools
 		this.baseURL =
 			'https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery';
 		this.headers = {
@@ -24,10 +23,9 @@ class KiwiService {
 			'Sec-Ch-Ua-Mobile': '?0',
 			'Sec-Ch-Ua-Platform': '"macOS"',
 			Priority: 'u=1, i',
-			// Headers críticos de Kiwi
 			'kw-umbrella-token': process.env.KIWI_UMBRELLA_TOKEN,
 			'kw-skypicker-visitor-uniqid': process.env.KIWI_VISITOR_UNIQID,
-			'kw-x-rand-id': '09c9892f', // Header adicional que vi en tu request
+			'kw-x-rand-id': '09c9892f',
 		};
 	}
 
@@ -41,7 +39,9 @@ class KiwiService {
 				passengers = 1,
 			} = searchParams;
 
-			// Query GraphQL real de Kiwi obtenida del DevTools
+			const originFormatted = this.formatAirportCode(origin);
+			const destinationFormatted = this.formatAirportCode(destination);
+
 			const query = `query SearchReturnItinerariesQuery(
   $search: SearchReturnInput
   $filter: ItinerariesFilterInput
@@ -360,29 +360,20 @@ class KiwiService {
   }
 }`;
 
-			// Variables con códigos HARDCODEADOS temporalmente para Berlin-Istanbul
+			// Variables con tokens dinámicos
 			const variables = {
 				search: {
 					itinerary: {
 						source: {
-							ids: [
-								origin.toUpperCase() === 'BER'
-									? 'City:berlin_de'
-									: this.formatAirportCode(origin),
-							],
+							ids: [originFormatted],
 						},
 						destination: {
-							ids: [
-								destination.toUpperCase() === 'IST'
-									? 'City:istanbul_tr'
-									: this.formatAirportCode(destination),
-							],
+							ids: [destinationFormatted],
 						},
 						outboundDepartureDate: {
 							start: `${departureDate}T00:00:00`,
 							end: `${departureDate}T23:59:59`,
 						},
-						// Agregar inbound para búsquedas de ida y vuelta
 						...(returnDate && {
 							inboundDepartureDate: {
 								start: `${returnDate}T00:00:00`,
@@ -441,8 +432,9 @@ class KiwiService {
 					},
 					sortVersion: 14,
 					applySortingChanges: false,
+					serverToken: process.env.KIWI_SERVER_TOKEN || null,
+					searchSessionId: this.generateSessionId(),
 				},
-				conditions: false,
 			};
 
 			console.log(
@@ -481,7 +473,14 @@ class KiwiService {
 		}
 	}
 
-	// Método para formatear códigos de aeropuerto/ciudad según formato de Kiwi
+	//  Generar session ID único
+	generateSessionId() {
+		return (
+			Math.random().toString(36).substring(2, 15) +
+			Math.random().toString(36).substring(2, 15)
+		);
+	}
+
 	formatAirportCode(code) {
 		const cityMapping = {
 			// Argentina
@@ -516,7 +515,7 @@ class KiwiService {
 			VIE: 'Airport:vienna_at',
 			LIS: 'City:lisbon_pt',
 			MXP: 'Airport:milan-malpensa_it',
-			BER: 'City:berlin_de', // ✅ Berlin (todos los aeropuertos)
+			BER: 'City:berlin_de',
 
 			// Americas
 			MIA: 'City:miami_us',
@@ -541,22 +540,26 @@ class KiwiService {
 			HIJ: 'Airport:hiroshima_jp',
 			OKA: 'Airport:okinawa-naha_jp',
 
-			// OTROS DESTINOS ASIÁTICOS POPULARES
-			ICN: 'Airport:seoul-incheon_kr', // Seúl, Corea del Sur
-			GMP: 'Airport:seoul-gimpo_kr', // Seúl Gimpo
-			PVG: 'Airport:shanghai-pudong_cn', // Shanghai, China
-			PEK: 'Airport:beijing-capital_cn', // Beijing, China
-			HKG: 'Airport:hong-kong_hk', // Hong Kong
-			SIN: 'Airport:singapore-changi_sg', // Singapur
-			BKK: 'Airport:bangkok-suvarnabhumi_th', // Bangkok, Tailandia
-			KUL: 'Airport:kuala-lumpur_my', // Kuala Lumpur, Malasia
-			CGK: 'Airport:jakarta-soekarno-hatta_id', // Jakarta, Indonesia
-			MNL: 'Airport:manila_ph', // Manila, Filipinas
+			// OTROS DESTINOS ASIÁTICOS
+			ICN: 'Airport:seoul-incheon_kr',
+			GMP: 'Airport:seoul-gimpo_kr',
+			PVG: 'Airport:shanghai-pudong_cn',
+			PEK: 'Airport:beijing-capital_cn',
+			HKG: 'Airport:hong-kong_hk',
+			SIN: 'Airport:singapore-changi_sg',
+			BKK: 'Airport:bangkok-suvarnabhumi_th',
+			KUL: 'Airport:kuala-lumpur_my',
+			CGK: 'Airport:jakarta-soekarno-hatta_id',
+			MNL: 'Airport:manila_ph',
 
 			// OCEANÍA
-			SYD: 'Airport:sydney-kingsford-smith_au', // Sydney, Australia
-			MEL: 'Airport:melbourne_au', // Melbourne, Australia
-			AKL: 'Airport:auckland_nz', // Auckland, Nueva Zelanda
+			SYD: 'Airport:sydney-kingsford-smith_au',
+			MEL: 'Airport:melbourne_au',
+			AKL: 'Airport:auckland_nz',
+
+			// TURQUÍA
+			IST: 'City:istanbul_tr',
+			SAW: 'Airport:sabiha-gokcen_tr',
 		};
 
 		const formatted = cityMapping[code.toUpperCase()];
@@ -565,24 +568,19 @@ class KiwiService {
 			return formatted;
 		}
 
-		// Si no está en el mapeo, intentar formato genérico
 		console.warn(`⚠️ Código ${code} no está mapeado, usando formato genérico`);
 		return `City:${code.toLowerCase()}_ar`;
 	}
 
-	// Método para parsear la respuesta de Kiwi y convertirla a nuestro formato
 	parseFlightData(rawData, searchQuery) {
 		const flights = [];
 
 		try {
-			// Extraer itinerarios de la respuesta real de Kiwi
 			const itineraries = rawData.returnItineraries?.itineraries || [];
-
 			console.log(`📊 Parseando ${itineraries.length} itinerarios de Kiwi`);
 
 			itineraries.forEach((itinerary) => {
 				try {
-					// Obtener el primer segmento outbound para datos básicos
 					const outboundSegment =
 						itinerary.outbound?.sectorSegments?.[0]?.segment;
 					const inboundSegment =
@@ -593,18 +591,24 @@ class KiwiService {
 						return;
 					}
 
-					// Obtener el mejor precio (EUR preferido)
+					//  Validar precios antes de usar
 					const priceEur = itinerary.priceEur?.amount;
 					const priceOriginal = itinerary.price?.amount;
+					const finalPrice = priceEur || priceOriginal;
 
-					// Obtener booking URL del primer booking option disponible
+					// Solo procesar si hay precio válido
+					if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
+						console.warn('⚠️ Precio inválido, saltando vuelo:', finalPrice);
+						return;
+					}
+
 					const bookingUrl =
 						itinerary.bookingOptions?.edges?.[0]?.node?.bookingUrl;
 
 					const flight = {
 						id: itinerary.id || itinerary.shareId,
 						price: {
-							amount: priceEur || priceOriginal,
+							amount: finalPrice,
 							currency: priceEur ? 'EUR' : 'USD',
 						},
 						origin: {
@@ -679,7 +683,6 @@ class KiwiService {
 		return flights;
 	}
 
-	// Extraer escalas/stops del vuelo
 	extractStops(sectorSegments) {
 		const stops = [];
 
@@ -702,7 +705,7 @@ class KiwiService {
 	}
 
 	formatDuration(minutes) {
-		if (!minutes) return '';
+		if (!minutes || isNaN(minutes)) return '';
 		const hours = Math.floor(minutes / 60);
 		const mins = minutes % 60;
 		return `${hours}h ${mins}m`;
