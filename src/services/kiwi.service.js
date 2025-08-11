@@ -42,6 +42,10 @@ class KiwiService {
 			const originFormatted = this.formatAirportCode(origin);
 			const destinationFormatted = this.formatAirportCode(destination);
 
+			console.log(
+				`🔍 Buscando vuelos: ${origin} → ${destination} (${departureDate}${returnDate ? ` - ${returnDate}` : ''})`
+			);
+
 			const query = `query SearchReturnItinerariesQuery(
   $search: SearchReturnInput
   $filter: ItinerariesFilterInput
@@ -60,53 +64,9 @@ class KiwiService {
         serverToken
       }
       metadata {
-        eligibilityInformation {
-          baggageEligibilityInformation {
-            topFiveResultsBaggageEligibleForPrompt
-            numberOfBags
-          }
-          guaranteeAndRedirectsEligibilityInformation {
-            redirect {
-              anywhere
-              top10
-              isKiwiAvailable
-            }
-            guarantee {
-              anywhere
-              top10
-            }
-            combination {
-              anywhere
-              top10
-            }
-          }
-          kiwiBasicEligibility {
-            anywhere
-            top10
-          }
-          topThreeResortingOccurred
-          carriersDeeplinkEligibility
-          responseContainsKayakItinerary
-          paretoABTestEligible
-        }
-        carriers {
-          code
-          id
-        }
         itinerariesCount
         hasMorePending
-        missingProviders {
-          code
-        }
         searchFingerprint
-        statusPerProvider {
-          provider {
-            id
-          }
-          errorHappened
-          errorMessage
-        }
-        hasTier1MarketItineraries
       }
       itineraries {
         __typename
@@ -360,7 +320,6 @@ class KiwiService {
   }
 }`;
 
-			// Variables con tokens dinámicos
 			const variables = {
 				search: {
 					itinerary: {
@@ -437,10 +396,6 @@ class KiwiService {
 				},
 			};
 
-			console.log(
-				`🔍 Buscando vuelos: ${origin} → ${destination} (${departureDate})`
-			);
-
 			const response = await axios.post(
 				this.baseURL,
 				{
@@ -473,16 +428,12 @@ class KiwiService {
 		}
 	}
 
-	//  Generar session ID único
-	generateSessionId() {
-		return (
-			Math.random().toString(36).substring(2, 15) +
-			Math.random().toString(36).substring(2, 15)
-		);
-	}
-
 	formatAirportCode(code) {
 		const cityMapping = {
+			// EUROPA (corregidos según el ejemplo real)
+			VIE: 'City:vienna_at', // ✅ Confirmado que funciona
+			BER: 'City:berlin_de', // ✅ Confirmado que funciona
+
 			// Argentina
 			BUE: 'City:buenos-aires_ar',
 			EZE: 'Airport:ezeiza_ar',
@@ -512,10 +463,8 @@ class KiwiService {
 			FRA: 'Airport:frankfurt_de',
 			MUC: 'Airport:munich_de',
 			ZUR: 'Airport:zurich_ch',
-			VIE: 'Airport:vienna_at',
 			LIS: 'City:lisbon_pt',
 			MXP: 'Airport:milan-malpensa_it',
-			BER: 'City:berlin_de',
 
 			// Americas
 			MIA: 'City:miami_us',
@@ -569,17 +518,69 @@ class KiwiService {
 		}
 
 		console.warn(`⚠️ Código ${code} no está mapeado, usando formato genérico`);
-		return `City:${code.toLowerCase()}_ar`;
+		return `City:${code.toLowerCase()}_de`;
+	}
+
+	// Resto de métodos igual...
+	generateSessionId() {
+		return (
+			Math.random().toString(36).substring(2, 15) +
+			Math.random().toString(36).substring(2, 15)
+		);
+	}
+
+	// Método debug mejorado
+	debugSearchResponse(rawData, searchParams) {
+		console.log('🔧 DEBUG - Parámetros de búsqueda:');
+		console.log('  Origin:', searchParams.origin);
+		console.log('  Destination:', searchParams.destination);
+		console.log('  Departure Date:', searchParams.departureDate);
+		console.log('  Return Date:', searchParams.returnDate);
+
+		const itineraries = rawData.returnItineraries?.itineraries || [];
+
+		if (itineraries.length > 0) {
+			console.log('🔧 DEBUG - Primeros 3 itinerarios encontrados:');
+
+			itineraries.slice(0, 3).forEach((itinerary, index) => {
+				const outbound = itinerary.outbound?.sectorSegments?.[0]?.segment;
+				const inbound = itinerary.inbound?.sectorSegments?.[0]?.segment;
+
+				console.log(`  Itinerario ${index + 1}:`);
+				console.log(`    ID: ${itinerary.id}`);
+				console.log(
+					`    Precio: €${itinerary.priceEur?.amount || itinerary.price?.amount}`
+				);
+
+				if (outbound) {
+					console.log(
+						`    Ida: ${outbound.source?.station?.code} (${outbound.source?.station?.city?.name}) → ${outbound.destination?.station?.code} (${outbound.destination?.station?.city?.name})`
+					);
+				}
+
+				if (inbound) {
+					console.log(
+						`    Vuelta: ${inbound.source?.station?.code} (${inbound.source?.station?.city?.name}) → ${inbound.destination?.station?.code} (${inbound.destination?.station?.city?.name})`
+					);
+				}
+
+				console.log('    ---');
+			});
+		} else {
+			console.log('🔧 DEBUG - No se encontraron itinerarios');
+		}
 	}
 
 	parseFlightData(rawData, searchQuery) {
+		this.debugSearchResponse(rawData, searchQuery);
+
 		const flights = [];
 
 		try {
 			const itineraries = rawData.returnItineraries?.itineraries || [];
 			console.log(`📊 Parseando ${itineraries.length} itinerarios de Kiwi`);
 
-			itineraries.forEach((itinerary) => {
+			itineraries.forEach((itinerary, index) => {
 				try {
 					const outboundSegment =
 						itinerary.outbound?.sectorSegments?.[0]?.segment;
@@ -591,12 +592,34 @@ class KiwiService {
 						return;
 					}
 
-					//  Validar precios antes de usar
+					// 🔥 NUEVA VALIDACIÓN: Verificar destinos correctos
+					const expectedOrigin = searchQuery.origin;
+					const expectedDestination = searchQuery.destination;
+					const actualOrigin = outboundSegment.source?.station?.code;
+					const actualDestination = outboundSegment.destination?.station?.code;
+
+					// Validar que el primer segmento sea el origen correcto
+					if (actualOrigin !== expectedOrigin) {
+						console.warn(
+							`⚠️ Origen incorrecto. Esperado: ${expectedOrigin}, Actual: ${actualOrigin}`
+						);
+						return;
+					}
+
+					// 🔥 VALIDACIÓN MEJORADA: Para vuelos con escalas, validar el destino final
+					const finalDestination = this.getFinalDestination(itinerary.outbound);
+					if (finalDestination !== expectedDestination) {
+						console.warn(
+							`⚠️ Destino final incorrecto. Esperado: ${expectedDestination}, Actual: ${finalDestination}`
+						);
+						return;
+					}
+
+					// Validar precios antes de usar
 					const priceEur = itinerary.priceEur?.amount;
 					const priceOriginal = itinerary.price?.amount;
 					const finalPrice = priceEur || priceOriginal;
 
-					// Solo procesar si hay precio válido
 					if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
 						console.warn('⚠️ Precio inválido, saltando vuelo:', finalPrice);
 						return;
@@ -604,6 +627,10 @@ class KiwiService {
 
 					const bookingUrl =
 						itinerary.bookingOptions?.edges?.[0]?.node?.bookingUrl;
+
+					// 🔥 CALCULAR SI ES VUELO DIRECTO
+					const isDirectFlight = this.isDirectFlight(itinerary.outbound);
+					const numStops = this.getNumberOfStops(itinerary.outbound);
 
 					const flight = {
 						id: itinerary.id || itinerary.shareId,
@@ -617,9 +644,10 @@ class KiwiService {
 							code: outboundSegment.source?.station?.code,
 						},
 						destination: {
-							city: outboundSegment.destination?.station?.city?.name,
-							airport: outboundSegment.destination?.station?.name,
-							code: outboundSegment.destination?.station?.code,
+							city: this.getFinalDestinationInfo(itinerary.outbound)?.city,
+							airport: this.getFinalDestinationInfo(itinerary.outbound)
+								?.airport,
+							code: this.getFinalDestinationInfo(itinerary.outbound)?.code,
 						},
 						departure: {
 							date: new Date(outboundSegment.source?.utcTimeIso),
@@ -627,15 +655,17 @@ class KiwiService {
 							timestamp: new Date(outboundSegment.source?.utcTimeIso).getTime(),
 						},
 						arrival: {
-							date: new Date(outboundSegment.destination?.utcTimeIso),
-							time: outboundSegment.destination?.localTime,
+							date: new Date(this.getFinalArrival(itinerary.outbound)),
+							time: this.getFinalArrivalTime(itinerary.outbound),
 							timestamp: new Date(
-								outboundSegment.destination?.utcTimeIso
+								this.getFinalArrival(itinerary.outbound)
 							).getTime(),
 						},
 						duration: {
-							total: this.formatDuration(itinerary.duration),
-							minutes: itinerary.duration,
+							total: this.formatDuration(
+								itinerary.outbound?.duration || itinerary.duration
+							),
+							minutes: itinerary.outbound?.duration || itinerary.duration,
 						},
 						airline: {
 							name: outboundSegment.carrier?.name,
@@ -643,6 +673,16 @@ class KiwiService {
 							logo: null,
 						},
 						stops: this.extractStops(itinerary.outbound?.sectorSegments || []),
+
+						// 🔥 NUEVOS CAMPOS
+						isDirect: isDirectFlight,
+						numberOfStops: numStops,
+						flightQuality: this.calculateFlightQuality(
+							finalPrice,
+							isDirectFlight,
+							numStops
+						),
+
 						bookingUrl: bookingUrl,
 						provider: itinerary.provider?.name,
 						isVanilla: itinerary.isVanilla,
@@ -654,19 +694,26 @@ class KiwiService {
 									time: inboundSegment.source?.localTime,
 								},
 								arrival: {
-									date: new Date(inboundSegment.destination?.utcTimeIso),
-									time: inboundSegment.destination?.localTime,
+									date: new Date(this.getFinalArrival(itinerary.inbound)),
+									time: this.getFinalArrivalTime(itinerary.inbound),
 								},
 								airline: {
 									name: inboundSegment.carrier?.name,
 									code: inboundSegment.carrier?.code,
 								},
+								isDirect: this.isDirectFlight(itinerary.inbound),
+								numberOfStops: this.getNumberOfStops(itinerary.inbound),
 							},
 						}),
 
 						searchQuery,
 						rawData: itinerary,
 					};
+
+					// 🔥 LOG MEJORADO
+					console.log(
+						`  ✈️ Vuelo ${isDirectFlight ? 'DIRECTO' : `${numStops} escalas`}: ${flight.origin.code} → ${flight.destination.code} - €${finalPrice}`
+					);
 
 					flights.push(flight);
 				} catch (parseError) {
@@ -681,6 +728,60 @@ class KiwiService {
 		}
 
 		return flights;
+	}
+
+	// 🔥 NUEVOS MÉTODOS AUXILIARES
+	getFinalDestination(leg) {
+		if (!leg?.sectorSegments) return null;
+		const lastSegment = leg.sectorSegments[leg.sectorSegments.length - 1];
+		return lastSegment?.segment?.destination?.station?.code;
+	}
+
+	getFinalDestinationInfo(leg) {
+		if (!leg?.sectorSegments) return {};
+		const lastSegment = leg.sectorSegments[leg.sectorSegments.length - 1];
+		const dest = lastSegment?.segment?.destination?.station;
+		return {
+			city: dest?.city?.name,
+			airport: dest?.name,
+			code: dest?.code,
+		};
+	}
+
+	getFinalArrival(leg) {
+		if (!leg?.sectorSegments) return null;
+		const lastSegment = leg.sectorSegments[leg.sectorSegments.length - 1];
+		return lastSegment?.segment?.destination?.utcTimeIso;
+	}
+
+	getFinalArrivalTime(leg) {
+		if (!leg?.sectorSegments) return null;
+		const lastSegment = leg.sectorSegments[leg.sectorSegments.length - 1];
+		return lastSegment?.segment?.destination?.localTime;
+	}
+
+	isDirectFlight(leg) {
+		return leg?.sectorSegments?.length === 1;
+	}
+
+	getNumberOfStops(leg) {
+		return Math.max(0, (leg?.sectorSegments?.length || 1) - 1);
+	}
+
+	calculateFlightQuality(price, isDirect, stops) {
+		let score = 100;
+
+		// Penalizar por escalas
+		score -= stops * 30;
+
+		// Bonificar vuelos directos
+		if (isDirect) score += 20;
+
+		// Penalizar precios muy altos
+		if (price > 400) score -= 20;
+		if (price > 500) score -= 40;
+
+		return Math.max(0, Math.min(100, score));
 	}
 
 	extractStops(sectorSegments) {

@@ -71,31 +71,20 @@ class TelegramService {
 	}
 
 	formatPriceAlert(flight, routeMonitor) {
-		// Debug: mostrar estructura del vuelo para troubleshooting
-		console.log('🔧 DEBUG - Estructura del vuelo:', {
-			flightId: flight.id,
-			duration: flight.duration,
-			departure: flight.departure,
-			arrival: flight.arrival,
-			returnFlight: flight.returnFlight
-				? {
-						duration: flight.returnFlight.duration,
-						departure: flight.returnFlight.departure,
-						arrival: flight.returnFlight.arrival,
-					}
-				: null,
-		});
-
 		const isNewLow =
 			!routeMonitor.bestPrice ||
 			flight.price.amount < routeMonitor.bestPrice.amount;
-		const emoji = isNewLow ? '🔥🔥🔥' : '✈️';
 
-		// Calcular diferencia de precio de forma segura
+		let emoji = '✈️';
+		if (isNewLow) {
+			emoji = flight.isDirect ? '🔥🔥🔥 DIRECTO' : '🔥🔥 ESCALA';
+		} else {
+			emoji = flight.isDirect ? '✈️ DIRECTO' : '✈️ ESCALA';
+		}
+
 		let priceChange = '';
 		if (
-			routeMonitor.bestPrice &&
-			routeMonitor.bestPrice.amount &&
+			routeMonitor.bestPrice?.amount &&
 			!isNaN(routeMonitor.bestPrice.amount)
 		) {
 			const diff = flight.price.amount - routeMonitor.bestPrice.amount;
@@ -103,168 +92,82 @@ class TelegramService {
 				diff !== 0 ? ` (${diff > 0 ? '+' : ''}€${Math.round(diff)})` : '';
 		}
 
-		// Formatear duración correctamente
-		const duration = this.formatDuration(
-			flight.duration?.minutes || flight.duration?.total
-		);
+		// 🔥 INFORMACIÓN DE ESCALAS
+		let stopsInfo = '';
+		if (flight.isDirect) {
+			stopsInfo = '🚀 <b>VUELO DIRECTO</b>';
+		} else if (flight.numberOfStops === 1) {
+			const stopCity = flight.stops?.[0]?.city || 'Ciudad intermedia';
+			stopsInfo = `🔄 <b>1 ESCALA</b> en ${stopCity}`;
+		} else if (flight.numberOfStops > 1) {
+			stopsInfo = `🔄 <b>${flight.numberOfStops} ESCALAS</b>`;
+		}
 
-		// FIX: Formatear precio promedio de forma más robusta
+		// Resto del formato igual...
 		let avgPrice = 'N/A';
 		if (routeMonitor.stats?.averagePrice) {
 			const avg = routeMonitor.stats.averagePrice;
-
-			// Validar que sea un número válido y razonable
 			if (!isNaN(avg) && isFinite(avg) && avg > 0 && avg < 10000) {
 				avgPrice = `€${Math.round(avg)}`;
-			} else {
-				// Si el precio promedio está corrupto, intentar calcularlo desde los datos históricos
-				console.warn(`⚠️ Precio promedio corrupto detectado: ${avg}`);
-				if (routeMonitor.priceHistory && routeMonitor.priceHistory.length > 0) {
-					const validPrices = routeMonitor.priceHistory
-						.map((p) => p.amount)
-						.filter(
-							(amount) =>
-								!isNaN(amount) &&
-								isFinite(amount) &&
-								amount > 0 &&
-								amount < 10000
-						);
-
-					if (validPrices.length > 0) {
-						const calculatedAvg =
-							validPrices.reduce((sum, price) => sum + price, 0) /
-							validPrices.length;
-						avgPrice = `€${Math.round(calculatedAvg)}`;
-						console.log(`📊 Precio promedio recalculado: ${avgPrice}`);
-					}
-				}
 			}
 		}
 
-		// Determinar si es ida y vuelta
 		const isRoundTrip =
 			flight.returnFlight || routeMonitor.name.includes('IDA Y VUELTA');
 
 		let flightDetails = '';
-
 		if (isRoundTrip && flight.returnFlight) {
-			// FIX: Calcular duración del vuelo de ida
+			// Cálculo de duraciones mejorado...
 			let outboundDuration = 'N/A';
-
-			// PRIMERO: Calcular desde horarios (más confiable que la duración total)
 			if (flight.departure && flight.arrival) {
-				console.log('🔧 Calculando duración de ida desde horarios:', {
-					departure: flight.departure,
-					arrival: flight.arrival,
-				});
-
-				let depTime, arrTime;
-
-				// Manejar diferentes formatos de fecha/hora
-				if (flight.departure.timestamp && flight.arrival.timestamp) {
-					depTime = flight.departure.timestamp;
-					arrTime = flight.arrival.timestamp;
-				} else if (flight.departure.date && flight.arrival.date) {
-					depTime = new Date(flight.departure.date).getTime();
-					arrTime = new Date(flight.arrival.date).getTime();
-				}
-
+				const depTime = flight.departure.timestamp;
+				const arrTime = flight.arrival.timestamp;
 				if (depTime && arrTime && arrTime > depTime) {
 					const durationMinutes = (arrTime - depTime) / (1000 * 60);
-					console.log(`🔧 Duración calculada ida: ${durationMinutes} minutos`);
-
-					// Validar que sea una duración razonable para un vuelo (30min - 12 horas)
 					if (durationMinutes > 30 && durationMinutes < 720) {
 						outboundDuration = this.formatDuration(durationMinutes);
-					} else {
-						console.warn(
-							`⚠️ Duración de ida fuera de rango: ${durationMinutes} minutos`
-						);
 					}
 				}
 			}
 
-			// SEGUNDO: Si no se pudo calcular desde horarios, intentar usar la duración proporcionada
-			if (outboundDuration === 'N/A' && flight.duration) {
-				// Verificar si la duración total parece razonable para un solo tramo
-				if (flight.duration.minutes && flight.duration.minutes < 720) {
-					// menos de 12 horas
-					outboundDuration = this.formatDuration(flight.duration.minutes);
-				} else if (flight.duration.total) {
-					const parsed = this.formatDuration(flight.duration.total);
-					// Solo usar si no contiene valores absurdos como "350h"
-					if (parsed !== 'N/A' && !parsed.includes('350')) {
-						outboundDuration = parsed;
-					}
-				}
-			}
-
-			// Calcular duración del vuelo de vuelta
 			let returnDuration = 'N/A';
-
 			if (flight.returnFlight.departure && flight.returnFlight.arrival) {
-				console.log('🔧 Calculando duración de vuelta desde horarios:', {
-					departure: flight.returnFlight.departure,
-					arrival: flight.returnFlight.arrival,
-				});
-
-				let depTime, arrTime;
-
-				if (
-					flight.returnFlight.departure.timestamp &&
-					flight.returnFlight.arrival.timestamp
-				) {
-					depTime = flight.returnFlight.departure.timestamp;
-					arrTime = flight.returnFlight.arrival.timestamp;
-				} else if (
-					flight.returnFlight.departure.date &&
-					flight.returnFlight.arrival.date
-				) {
-					depTime = new Date(flight.returnFlight.departure.date).getTime();
-					arrTime = new Date(flight.returnFlight.arrival.date).getTime();
-				}
-
+				const depTime = new Date(flight.returnFlight.departure.date).getTime();
+				const arrTime = new Date(flight.returnFlight.arrival.date).getTime();
 				if (depTime && arrTime && arrTime > depTime) {
 					const durationMinutes = (arrTime - depTime) / (1000 * 60);
-					console.log(
-						`🔧 Duración calculada vuelta: ${durationMinutes} minutos`
-					);
-
 					if (durationMinutes > 30 && durationMinutes < 720) {
 						returnDuration = this.formatDuration(durationMinutes);
-					} else {
-						console.warn(
-							`⚠️ Duración de vuelta fuera de rango: ${durationMinutes} minutos`
-						);
 					}
 				}
-			} else if (flight.returnFlight.duration) {
-				returnDuration = this.formatDuration(
-					flight.returnFlight.duration.minutes ||
-						flight.returnFlight.duration.total
-				);
 			}
 
-			flightDetails = `🛫 <b>IDA:</b> ${flight.origin?.city || 'Origen'} (${flight.origin?.code}) → ${flight.destination?.city || 'Destino'} (${flight.destination?.code})
+			flightDetails = `🛫 <b>IDA:</b> ${flight.origin?.city} (${flight.origin?.code}) → ${flight.destination?.city} (${flight.destination?.code})
 📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
 ⏱️ <b>Duración:</b> ${outboundDuration}
 ✈️ <b>${flight.airline?.name || 'N/A'}</b>
+${stopsInfo}
 
-🛬 <b>VUELTA:</b> ${flight.destination?.city || 'Destino'} (${flight.destination?.code}) → ${flight.origin?.city || 'Origen'} (${flight.origin?.code})
+🛬 <b>VUELTA:</b> ${flight.destination?.city} (${flight.destination?.code}) → ${flight.origin?.city} (${flight.origin?.code})
 📅 <b>${this.formatDate(flight.returnFlight.departure?.date)}</b> a las <b>${this.formatTime(flight.returnFlight.departure?.time)}</b>
 ⏱️ <b>Duración:</b> ${returnDuration}
-✈️ <b>${flight.returnFlight.airline?.name || 'N/A'}</b>`;
+✈️ <b>${flight.returnFlight.airline?.name || 'N/A'}</b>
+${flight.returnFlight.isDirect ? '🚀 <b>DIRECTO</b>' : `🔄 <b>${flight.returnFlight.numberOfStops || 0} escalas</b>`}`;
 		} else {
-			// Vuelo solo de ida
-			flightDetails = `🛫 <b>${flight.origin?.city || 'Origen'} (${flight.origin?.code || 'N/A'})</b>
-🛬 <b>${flight.destination?.city || 'Destino'} (${flight.destination?.code || 'N/A'})</b>
+			const duration = this.formatDuration(
+				flight.duration?.minutes || flight.duration?.total
+			);
+
+			flightDetails = `🛫 <b>${flight.origin?.city} (${flight.origin?.code})</b>
+🛬 <b>${flight.destination?.city} (${flight.destination?.code})</b>
 
 📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
 ⏱️ <b>Duración:</b> ${duration}
-✈️ <b>Aerolínea:</b> ${flight.airline?.name || 'N/A'}`;
+✈️ <b>Aerolínea:</b> ${flight.airline?.name || 'N/A'}
+${stopsInfo}`;
 		}
 
-		return `${emoji} <b>¡PRECIO BAJO DETECTADO!</b> ${emoji}
+		return `${emoji} <b>¡PRECIO DETECTADO!</b>
 
 ${flightDetails}
 
@@ -273,6 +176,7 @@ ${flightDetails}
 ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 🎯 <b>Umbral:</b> €${routeMonitor.priceThreshold}
 📈 <b>Precio promedio:</b> ${avgPrice}
+⭐ <b>Calidad del vuelo:</b> ${flight.flightQuality || 'N/A'}/100
 
 <i>Ruta: ${routeMonitor.name}</i>`;
 	}
