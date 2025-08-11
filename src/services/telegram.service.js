@@ -121,18 +121,18 @@ class TelegramService {
 
 			return `🔥 **${title}**${priceChange}
 
-🛫 **IDA:** ${flight.origin.city} → ${flight.destination.city}
-📅 **${this.formatDate(flight.departure?.date)}** a las **${this.formatTime(flight.departure?.time)}**
+🛫 <b>IDA:</b> ${flight.origin.city} → ${flight.destination.city}
+📅 <b>${this.formatDate(flight.departure?.date)}<b> a las <b>${this.formatTime(flight.departure?.time)}</b>
 ⏱️ ${outboundInfo}
 
-🛬 **VUELTA:** ${flight.destination.city} → ${flight.origin.city}
-📅 **${this.formatDate(flight.returnFlight.departure?.date)}** a las **${this.formatTime(flight.returnFlight.departure?.time)}**
+🛬 <b>VUELTA:</b> ${flight.destination.city} → ${flight.origin.city}
+📅 <b>${this.formatDate(flight.returnFlight.departure?.date)}</b> a las <b>${this.formatTime(flight.returnFlight.departure?.time)}</b>
 ⏱️ ${returnInfo}
 
-💰 **PRECIO TOTAL: €${flight.price?.amount}**${priceChange}
+💰 <b>PRECIO TOTAL: €${flight.price?.amount}</b>${priceChange}
 
-${isNewLow ? '🏆 **¡NUEVO PRECIO MÍNIMO!**' : ''}
-🎯 **Umbral:** €${routeMonitor.priceThreshold}
+${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
+🎯 <b>Umbral:</b> €${routeMonitor.priceThreshold}
 
 <i>Ruta: ${routeMonitor.name}</i>`;
 		} else {
@@ -141,16 +141,16 @@ ${isNewLow ? '🏆 **¡NUEVO PRECIO MÍNIMO!**' : ''}
 				? `${this.formatDuration(flight.duration?.minutes || flight.duration?.total)} • Directo`
 				: `${this.formatDuration(flight.duration?.minutes || flight.duration?.total)} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
 
-			return `🔥 **${title}**${priceChange}
+			return ` 🔥 <b>${title}</b>${priceChange}
 
 🛫 ${flight.origin.city} → ${flight.destination.city}
-📅 **${this.formatDate(flight.departure?.date)}** a las **${this.formatTime(flight.departure?.time)}**
+📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
 ⏱️ ${flightInfo}
 
-💰 **PRECIO: €${flight.price?.amount}**${priceChange}
+💰 <b>PRECIO: €${flight.price?.amount}</b>${priceChange}
 
 ${isNewLow ? '🏆 **¡NUEVO PRECIO MÍNIMO!**' : ''}
-🎯 **Umbral:** €${routeMonitor.priceThreshold}
+🎯 <b>Umbral:</b> €${routeMonitor.priceThreshold}
 
 <i>Ruta: ${routeMonitor.name}</i>`;
 		}
