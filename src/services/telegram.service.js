@@ -83,8 +83,6 @@ class TelegramService {
 			return false;
 		}
 	}
-	// ARREGLO URGENTE para telegram.service.js
-	// Reemplazar el método formatPriceAlert con formato HTML correcto:
 
 	formatPriceAlert(flight, routeMonitor) {
 		const isNewLow =
@@ -101,16 +99,16 @@ class TelegramService {
 				diff !== 0 ? ` (${diff > 0 ? '+' : ''}€${Math.round(diff)})` : '';
 		}
 
-		const title = `€${Math.round(flight.price.amount)} - ${flight.origin.code} → ${flight.destination.code}`;
+		const title = `€${Math.round(flight.price.amount)} - ${flight.origin.city} → ${flight.destination.city}`;
 
 		if (flight.returnFlight) {
-			// Vuelo ida y vuelta
-			const outboundDuration = this.formatDuration(
-				flight.duration?.minutes || flight.duration?.total
-			);
-			const returnDuration = this.formatDuration(
-				this.calculateReturnDuration(flight.returnFlight)
-			);
+			const outboundDuration =
+				this.calculateFlightDuration(flight.departure, flight.arrival) ||
+				this.formatDuration(flight.duration?.minutes || flight.duration?.total);
+
+			const returnDuration =
+				this.calculateReturnDuration(flight.returnFlight) ||
+				this.formatDuration(flight.returnFlight.duration?.minutes);
 
 			const outboundInfo = flight.isDirect
 				? `${outboundDuration} • Directo`
@@ -138,9 +136,13 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 <i>Ruta: ${routeMonitor.name}</i>`;
 		} else {
 			// Solo ida
+			const flightDuration =
+				this.calculateFlightDuration(flight.departure, flight.arrival) ||
+				this.formatDuration(flight.duration?.minutes || flight.duration?.total);
+
 			const flightInfo = flight.isDirect
-				? `${this.formatDuration(flight.duration?.minutes || flight.duration?.total)} • Directo`
-				: `${this.formatDuration(flight.duration?.minutes || flight.duration?.total)} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
+				? `${flightDuration} • Directo`
+				: `${flightDuration} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
 
 			return `🔥 <b>${title}</b>${priceChange}
 
@@ -157,19 +159,24 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 		}
 	}
 
-	calculateReturnDuration(returnFlight) {
-		if (!returnFlight.departure || !returnFlight.arrival) return null;
+	calculateFlightDuration(departure, arrival) {
+		if (!departure || !arrival) return null;
 
-		const depTime = new Date(returnFlight.departure.date).getTime();
-		const arrTime = new Date(returnFlight.arrival.date).getTime();
+		try {
+			const depTime = departure.timestamp || new Date(departure.date).getTime();
+			const arrTime = arrival.timestamp || new Date(arrival.date).getTime();
 
-		if (depTime && arrTime && arrTime > depTime) {
-			return (arrTime - depTime) / (1000 * 60); // minutos
+			if (depTime && arrTime && arrTime > depTime) {
+				const durationMinutes = (arrTime - depTime) / (1000 * 60);
+
+				return this.formatDuration(durationMinutes);
+			}
+		} catch (error) {
+			console.log(`⚠️  Error calculando duración: ${error.message}`);
 		}
 
 		return null;
 	}
-
 	formatTime(timeString) {
 		if (!timeString) return 'N/A';
 
@@ -193,13 +200,23 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 		}
 	}
 
+	calculateReturnDuration(returnFlight) {
+		if (!returnFlight || !returnFlight.departure || !returnFlight.arrival) {
+			return null;
+		}
+
+		return this.calculateFlightDuration(
+			returnFlight.departure,
+			returnFlight.arrival
+		);
+	}
+
 	formatDuration(durationInput) {
 		if (!durationInput) return 'N/A';
 
 		try {
 			let minutes;
 
-			// Si viene como string "XhYm", parsearlo
 			if (typeof durationInput === 'string') {
 				const match = durationInput.match(/(\d+)h\s*(\d+)m/);
 				if (match) {
@@ -207,25 +224,24 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 					const mins = parseInt(match[2]);
 					minutes = hours * 60 + mins;
 				} else {
-					return durationInput; // Devolver tal como está si no se puede parsear
+					return durationInput;
 				}
-			}
-			// Si viene como número (minutos)
-			else if (typeof durationInput === 'number') {
+			} else if (typeof durationInput === 'number') {
 				minutes = durationInput;
 			} else {
 				return 'N/A';
 			}
 
-			// Validar que sea un número razonable (menos de 24 horas)
+			// Validar rango razonable
 			if (isNaN(minutes) || minutes <= 0 || minutes > 1440) {
 				return 'N/A';
 			}
 
 			const hours = Math.floor(minutes / 60);
-			const mins = minutes % 60;
+			const mins = Math.round(minutes % 60);
 			return `${hours}h ${mins}m`;
 		} catch (error) {
+			console.log(`⚠️  Error formateando duración: ${error.message}`);
 			return 'N/A';
 		}
 	}
