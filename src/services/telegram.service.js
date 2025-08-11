@@ -83,6 +83,8 @@ class TelegramService {
 			return false;
 		}
 	}
+	// ARREGLO URGENTE para telegram.service.js
+	// Reemplazar el método formatPriceAlert con formato HTML correcto:
 
 	formatPriceAlert(flight, routeMonitor) {
 		const isNewLow =
@@ -110,7 +112,6 @@ class TelegramService {
 				this.calculateReturnDuration(flight.returnFlight)
 			);
 
-			// 🔥 AGRUPAR: Duración + Escalas
 			const outboundInfo = flight.isDirect
 				? `${outboundDuration} • Directo`
 				: `${outboundDuration} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
@@ -119,17 +120,17 @@ class TelegramService {
 				? `${returnDuration} • Directo`
 				: `${returnDuration} • ${flight.returnFlight.numberOfStops || 0} escala${(flight.returnFlight.numberOfStops || 0) > 1 ? 's' : ''}`;
 
-			return `🔥 **${title}**${priceChange}
+			return `🔥 <b>${title}</b>${priceChange}
 
 🛫 <b>IDA:</b> ${flight.origin.city} → ${flight.destination.city}
-📅 <b>${this.formatDate(flight.departure?.date)}<b> a las <b>${this.formatTime(flight.departure?.time)}</b>
+📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
 ⏱️ ${outboundInfo}
 
 🛬 <b>VUELTA:</b> ${flight.destination.city} → ${flight.origin.city}
 📅 <b>${this.formatDate(flight.returnFlight.departure?.date)}</b> a las <b>${this.formatTime(flight.returnFlight.departure?.time)}</b>
 ⏱️ ${returnInfo}
 
-💰 <b>PRECIO TOTAL: €${flight.price?.amount}</b>${priceChange}
+💰 <b>PRECIO TOTAL: €${Math.round(flight.price?.amount)}</b>${priceChange}
 
 ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 🎯 <b>Umbral:</b> €${routeMonitor.priceThreshold}
@@ -141,15 +142,15 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 				? `${this.formatDuration(flight.duration?.minutes || flight.duration?.total)} • Directo`
 				: `${this.formatDuration(flight.duration?.minutes || flight.duration?.total)} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
 
-			return ` 🔥 <b>${title}</b>${priceChange}
+			return `🔥 <b>${title}</b>${priceChange}
 
 🛫 ${flight.origin.city} → ${flight.destination.city}
 📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
 ⏱️ ${flightInfo}
 
-💰 <b>PRECIO: €${flight.price?.amount}</b>${priceChange}
+💰 <b>PRECIO: €${Math.round(flight.price?.amount)}</b>${priceChange}
 
-${isNewLow ? '🏆 **¡NUEVO PRECIO MÍNIMO!**' : ''}
+${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 🎯 <b>Umbral:</b> €${routeMonitor.priceThreshold}
 
 <i>Ruta: ${routeMonitor.name}</i>`;
