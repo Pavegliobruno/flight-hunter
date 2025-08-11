@@ -608,12 +608,12 @@ class KiwiService {
 
 					// 🔥 VALIDACIÓN MEJORADA: Para vuelos con escalas, validar el destino final
 					const finalDestination = this.getFinalDestination(itinerary.outbound);
-					if (finalDestination !== expectedDestination) {
+					/* 	if (finalDestination !== expectedDestination) {
 						console.warn(
 							`⚠️ Destino final incorrecto. Esperado: ${expectedDestination}, Actual: ${finalDestination}`
 						);
 						return;
-					}
+					} */
 
 					// Validar precios antes de usar
 					const priceEur = itinerary.priceEur?.amount;
