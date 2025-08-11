@@ -6,6 +6,8 @@ class TelegramService {
 		this.bot = null;
 		this.defaultChatId = process.env.TELEGRAM_CHAT_ID;
 
+		this.sentAlerts = new Set(); // Almacena IDs de vuelos ya enviados
+
 		if (process.env.TELEGRAM_BOT_TOKEN) {
 			this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
 				polling: false,
@@ -22,18 +24,21 @@ class TelegramService {
 			return false;
 		}
 
+		const flightKey = `${routeMonitor._id}_${flight.departure.date.toDateString()}_${Math.round(flight.price.amount)}`;
+
+		if (this.sentAlerts.has(flightKey)) {
+			console.log(
+				`⏭️  Vuelo duplicado evitado: ${flight.origin.code} → ${flight.destination.code} €${flight.price.amount}`
+			);
+			return false;
+		}
+
 		try {
 			const chatId =
 				routeMonitor.notifications.telegram.chatId || this.defaultChatId;
-
-			if (!chatId) {
-				console.error('❌ No hay CHAT_ID configurado para Telegram');
-				return false;
-			}
+			if (!chatId) return false;
 
 			const message = this.formatPriceAlert(flight, routeMonitor);
-
-			// Arreglar la URL del booking - agregar el dominio completo
 			let bookingUrl = flight.bookingUrl || 'https://kiwi.com';
 			if (bookingUrl.startsWith('/')) {
 				bookingUrl = 'https://kiwi.com' + bookingUrl;
@@ -59,10 +64,19 @@ class TelegramService {
 			};
 
 			await this.bot.sendMessage(chatId, message, options);
-			console.log(
-				`📱 Alerta enviada por Telegram: ${flight.origin.code} → ${flight.destination.code} - €${flight.price.amount}`
-			);
 
+			//  Marcar como enviado
+			this.sentAlerts.add(flightKey);
+
+			// Limpiar cache cada 100 alertas para no consumir mucha memoria
+			if (this.sentAlerts.size > 100) {
+				this.sentAlerts.clear();
+				console.log('🧹 Cache de duplicados limpiado');
+			}
+
+			console.log(
+				`📱 Alerta enviada: ${flight.origin.code} → ${flight.destination.code} - €${flight.price.amount}`
+			);
 			return true;
 		} catch (error) {
 			console.error('❌ Error enviando mensaje de Telegram:', error.message);
@@ -75,13 +89,6 @@ class TelegramService {
 			!routeMonitor.bestPrice ||
 			flight.price.amount < routeMonitor.bestPrice.amount;
 
-		let emoji = '✈️';
-		if (isNewLow) {
-			emoji = flight.isDirect ? '🔥🔥🔥 DIRECTO' : '🔥🔥 ESCALA';
-		} else {
-			emoji = flight.isDirect ? '✈️ DIRECTO' : '✈️ ESCALA';
-		}
-
 		let priceChange = '';
 		if (
 			routeMonitor.bestPrice?.amount &&
@@ -92,93 +99,74 @@ class TelegramService {
 				diff !== 0 ? ` (${diff > 0 ? '+' : ''}€${Math.round(diff)})` : '';
 		}
 
-		// 🔥 INFORMACIÓN DE ESCALAS
-		let stopsInfo = '';
-		if (flight.isDirect) {
-			stopsInfo = '🚀 <b>VUELO DIRECTO</b>';
-		} else if (flight.numberOfStops === 1) {
-			const stopCity = flight.stops?.[0]?.city || 'Ciudad intermedia';
-			stopsInfo = `🔄 <b>1 ESCALA</b> en ${stopCity}`;
-		} else if (flight.numberOfStops > 1) {
-			stopsInfo = `🔄 <b>${flight.numberOfStops} ESCALAS</b>`;
-		}
+		const title = `€${Math.round(flight.price.amount)} - ${flight.origin.code} → ${flight.destination.code}`;
 
-		// Resto del formato igual...
-		let avgPrice = 'N/A';
-		if (routeMonitor.stats?.averagePrice) {
-			const avg = routeMonitor.stats.averagePrice;
-			if (!isNaN(avg) && isFinite(avg) && avg > 0 && avg < 10000) {
-				avgPrice = `€${Math.round(avg)}`;
-			}
-		}
-
-		const isRoundTrip =
-			flight.returnFlight || routeMonitor.name.includes('IDA Y VUELTA');
-
-		let flightDetails = '';
-		if (isRoundTrip && flight.returnFlight) {
-			// Cálculo de duraciones mejorado...
-			let outboundDuration = 'N/A';
-			if (flight.departure && flight.arrival) {
-				const depTime = flight.departure.timestamp;
-				const arrTime = flight.arrival.timestamp;
-				if (depTime && arrTime && arrTime > depTime) {
-					const durationMinutes = (arrTime - depTime) / (1000 * 60);
-					if (durationMinutes > 30 && durationMinutes < 720) {
-						outboundDuration = this.formatDuration(durationMinutes);
-					}
-				}
-			}
-
-			let returnDuration = 'N/A';
-			if (flight.returnFlight.departure && flight.returnFlight.arrival) {
-				const depTime = new Date(flight.returnFlight.departure.date).getTime();
-				const arrTime = new Date(flight.returnFlight.arrival.date).getTime();
-				if (depTime && arrTime && arrTime > depTime) {
-					const durationMinutes = (arrTime - depTime) / (1000 * 60);
-					if (durationMinutes > 30 && durationMinutes < 720) {
-						returnDuration = this.formatDuration(durationMinutes);
-					}
-				}
-			}
-
-			flightDetails = `🛫 <b>IDA:</b> ${flight.origin?.city} (${flight.origin?.code}) → ${flight.destination?.city} (${flight.destination?.code})
-📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
-⏱️ <b>Duración:</b> ${outboundDuration}
-✈️ <b>${flight.airline?.name || 'N/A'}</b>
-${stopsInfo}
-
-🛬 <b>VUELTA:</b> ${flight.destination?.city} (${flight.destination?.code}) → ${flight.origin?.city} (${flight.origin?.code})
-📅 <b>${this.formatDate(flight.returnFlight.departure?.date)}</b> a las <b>${this.formatTime(flight.returnFlight.departure?.time)}</b>
-⏱️ <b>Duración:</b> ${returnDuration}
-✈️ <b>${flight.returnFlight.airline?.name || 'N/A'}</b>
-${flight.returnFlight.isDirect ? '🚀 <b>DIRECTO</b>' : `🔄 <b>${flight.returnFlight.numberOfStops || 0} escalas</b>`}`;
-		} else {
-			const duration = this.formatDuration(
+		if (flight.returnFlight) {
+			// Vuelo ida y vuelta
+			const outboundDuration = this.formatDuration(
 				flight.duration?.minutes || flight.duration?.total
 			);
+			const returnDuration = this.formatDuration(
+				this.calculateReturnDuration(flight.returnFlight)
+			);
 
-			flightDetails = `🛫 <b>${flight.origin?.city} (${flight.origin?.code})</b>
-🛬 <b>${flight.destination?.city} (${flight.destination?.code})</b>
+			// 🔥 AGRUPAR: Duración + Escalas
+			const outboundInfo = flight.isDirect
+				? `${outboundDuration} • Directo`
+				: `${outboundDuration} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
 
-📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
-⏱️ <b>Duración:</b> ${duration}
-✈️ <b>Aerolínea:</b> ${flight.airline?.name || 'N/A'}
-${stopsInfo}`;
-		}
+			const returnInfo = flight.returnFlight.isDirect
+				? `${returnDuration} • Directo`
+				: `${returnDuration} • ${flight.returnFlight.numberOfStops || 0} escala${(flight.returnFlight.numberOfStops || 0) > 1 ? 's' : ''}`;
 
-		return `${emoji} <b>¡PRECIO DETECTADO!</b>
+			return `🔥 **${title}**${priceChange}
 
-${flightDetails}
+🛫 **IDA:** ${flight.origin.city} → ${flight.destination.city}
+📅 **${this.formatDate(flight.departure?.date)}** a las **${this.formatTime(flight.departure?.time)}**
+⏱️ ${outboundInfo}
 
-💰 <b>PRECIO TOTAL: €${flight.price?.amount}</b>${priceChange}
+🛬 **VUELTA:** ${flight.destination.city} → ${flight.origin.city}
+📅 **${this.formatDate(flight.returnFlight.departure?.date)}** a las **${this.formatTime(flight.returnFlight.departure?.time)}**
+⏱️ ${returnInfo}
 
-${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
-🎯 <b>Umbral:</b> €${routeMonitor.priceThreshold}
-📈 <b>Precio promedio:</b> ${avgPrice}
-⭐ <b>Calidad del vuelo:</b> ${flight.flightQuality || 'N/A'}/100
+💰 **PRECIO TOTAL: €${flight.price?.amount}**${priceChange}
+
+${isNewLow ? '🏆 **¡NUEVO PRECIO MÍNIMO!**' : ''}
+🎯 **Umbral:** €${routeMonitor.priceThreshold}
 
 <i>Ruta: ${routeMonitor.name}</i>`;
+		} else {
+			// Solo ida
+			const flightInfo = flight.isDirect
+				? `${this.formatDuration(flight.duration?.minutes || flight.duration?.total)} • Directo`
+				: `${this.formatDuration(flight.duration?.minutes || flight.duration?.total)} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
+
+			return `🔥 **${title}**${priceChange}
+
+🛫 ${flight.origin.city} → ${flight.destination.city}
+📅 **${this.formatDate(flight.departure?.date)}** a las **${this.formatTime(flight.departure?.time)}**
+⏱️ ${flightInfo}
+
+💰 **PRECIO: €${flight.price?.amount}**${priceChange}
+
+${isNewLow ? '🏆 **¡NUEVO PRECIO MÍNIMO!**' : ''}
+🎯 **Umbral:** €${routeMonitor.priceThreshold}
+
+<i>Ruta: ${routeMonitor.name}</i>`;
+		}
+	}
+
+	calculateReturnDuration(returnFlight) {
+		if (!returnFlight.departure || !returnFlight.arrival) return null;
+
+		const depTime = new Date(returnFlight.departure.date).getTime();
+		const arrTime = new Date(returnFlight.arrival.date).getTime();
+
+		if (depTime && arrTime && arrTime > depTime) {
+			return (arrTime - depTime) / (1000 * 60); // minutos
+		}
+
+		return null;
 	}
 
 	formatTime(timeString) {

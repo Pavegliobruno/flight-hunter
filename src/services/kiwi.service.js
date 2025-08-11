@@ -430,9 +430,10 @@ class KiwiService {
 
 	formatAirportCode(code) {
 		const cityMapping = {
-			// EUROPA (corregidos según el ejemplo real)
-			VIE: 'City:vienna_at', // ✅ Confirmado que funciona
-			BER: 'City:berlin_de', // ✅ Confirmado que funciona
+			// EUROPA
+			VIE: 'City:vienna_at',
+			BER: 'City:berlin_de',
+			BRI: 'City:bari_it',
 
 			// Argentina
 			BUE: 'City:buenos-aires_ar',
