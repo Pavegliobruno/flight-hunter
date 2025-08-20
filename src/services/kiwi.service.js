@@ -477,6 +477,7 @@ class KiwiService {
 			SCL: 'City:santiago_cl',
 			LIM: 'City:lima_pe',
 			BOG: 'City:bogota_co',
+			CUN: 'City:cancun_mx',
 
 			// JAPÓN
 			NRT: 'Airport:tokyo-narita_jp',
