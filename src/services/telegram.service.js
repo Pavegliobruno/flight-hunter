@@ -5,17 +5,75 @@ class TelegramService {
 	constructor() {
 		this.bot = null;
 		this.defaultChatId = process.env.TELEGRAM_CHAT_ID;
-
 		this.sentAlerts = new Set(); // Almacena IDs de vuelos ya enviados
+		this.commandsService = null;
 
 		if (process.env.TELEGRAM_BOT_TOKEN) {
 			this.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
-				polling: false,
+				polling: true,
 			});
+
+			this.initializeCommands();
+
 			console.log('📱 Telegram bot inicializado');
 		} else {
 			console.warn('⚠️  TELEGRAM_BOT_TOKEN no configurado');
 		}
+	}
+
+	initializeCommands() {
+		if (!this.bot) return;
+
+		const TelegramCommandsService = require('./telegramCommands.service');
+		this.commandsService = new TelegramCommandsService(this);
+		this.setupCommands();
+	}
+
+	setupCommands() {
+		if (!this.bot || !this.commandsService) return;
+
+		this.bot.setMyCommands([
+			{command: 'start', description: 'Iniciar el bot y ver bienvenida'},
+			{command: 'help', description: 'Mostrar ayuda y comandos disponibles'},
+			{command: 'monitors', description: 'Ver todas las rutas monitoreadas'},
+			{command: 'status', description: 'Ver estado del sistema de monitoreo'},
+			{command: 'pause', description: 'Pausar un monitor específico'},
+			{command: 'resume', description: 'Reactivar un monitor pausado'},
+		]);
+
+		this.bot.onText(/\/(\w+)(.*)/, async (msg, match) => {
+			try {
+				console.log(
+					`📱 Comando recibido: ${match[1]} | Texto completo: "${msg.text}"`
+				);
+				await this.commandsService.handleCommand(msg, match);
+			} catch (error) {
+				console.error('❌ Error manejando comando:', error);
+				await this.bot.sendMessage(
+					msg.chat.id,
+					'❌ Error procesando el comando. Intenta nuevamente.'
+				);
+			}
+		});
+
+		// Manejar mensajes no reconocidos (que no sean comandos)
+		this.bot.on('message', (msg) => {
+			// Solo responder si no es un comando
+			if (!msg.text?.startsWith('/')) {
+				this.bot.sendMessage(
+					msg.chat.id,
+					'👋 ¡Hola! Soy el bot de monitoreo de vuelos.\n\n' +
+						'Usa /help para ver los comandos disponibles o /monitors para ver tus rutas monitoreadas.'
+				);
+			}
+		});
+
+		// Manejar errores del bot
+		this.bot.on('polling_error', (error) => {
+			console.error('❌ Telegram polling error:', error.code, error.message);
+		});
+
+		console.log('🤖 Comandos de Telegram configurados exitosamente');
 	}
 
 	async sendPriceAlert(flight, routeMonitor) {
@@ -57,6 +115,16 @@ class TelegramService {
 							{
 								text: '📊 Estadísticas',
 								callback_data: `stats_${routeMonitor._id}`,
+							},
+						],
+						[
+							{
+								text: '⏸️ Pausar Monitor',
+								callback_data: `pause_${routeMonitor._id}`,
+							},
+							{
+								text: '📋 Ver Monitores',
+								callback_data: 'list_monitors',
 							},
 						],
 					],
@@ -168,7 +236,6 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 
 			if (depTime && arrTime && arrTime > depTime) {
 				const durationMinutes = (arrTime - depTime) / (1000 * 60);
-
 				return this.formatDuration(durationMinutes);
 			}
 		} catch (error) {
@@ -177,19 +244,18 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 
 		return null;
 	}
+
 	formatTime(timeString) {
 		if (!timeString) return 'N/A';
 
 		try {
-			// Si es un timestamp ISO, extraer solo la hora
 			if (timeString.includes('T')) {
 				const timePart = timeString.split('T')[1];
 				if (timePart) {
-					return timePart.substring(0, 5); // HH:MM
+					return timePart.substring(0, 5);
 				}
 			}
 
-			// Si ya está en formato HH:MM
 			if (timeString.match(/^\d{2}:\d{2}/)) {
 				return timeString.substring(0, 5);
 			}
@@ -232,7 +298,6 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 				return 'N/A';
 			}
 
-			// Validar rango razonable
 			if (isNaN(minutes) || minutes <= 0 || minutes > 1440) {
 				return 'N/A';
 			}
@@ -286,41 +351,13 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 		try {
 			await this.bot.sendMessage(
 				this.defaultChatId,
-				'🧪 Test del bot de Kiwi Flight Monitor\n\n✅ ¡El bot está funcionando correctamente!'
+				'🧪 <b>Test del bot de Kiwi Flight Monitor</b>\n\n✅ ¡El bot está funcionando correctamente!\n\n💡 Usa /help para ver todos los comandos disponibles.',
+				{parse_mode: 'HTML'}
 			);
 			return {success: true, message: 'Mensaje de test enviado'};
 		} catch (error) {
 			return {success: false, error: error.message};
 		}
-	}
-
-	// Método para configurar webhooks si querés comandos interactivos
-	setupWebhook(webhookUrl) {
-		if (!this.bot) return false;
-
-		this.bot.setWebHook(webhookUrl);
-
-		// Comandos básicos
-		this.bot.onText(/\/start/, (msg) => {
-			this.bot.sendMessage(
-				msg.chat.id,
-				'🛫 ¡Bienvenido al Monitor de Vuelos de Kiwi!\n\n' +
-					'Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.\n\n' +
-					'Comandos disponibles:\n' +
-					'/status - Ver estado del monitoreo\n' +
-					'/routes - Ver rutas monitoreadas'
-			);
-		});
-
-		this.bot.onText(/\/status/, async (msg) => {
-			// Aquí podrías consultar stats reales de la DB
-			this.bot.sendMessage(
-				msg.chat.id,
-				'📊 Consultando estado del monitoreo...'
-			);
-		});
-
-		return true;
 	}
 }
 
