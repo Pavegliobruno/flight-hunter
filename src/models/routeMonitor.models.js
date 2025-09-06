@@ -2,6 +2,12 @@ const mongoose = require('mongoose');
 
 const routeMonitorSchema = new mongoose.Schema(
 	{
+		userId: {
+			type: mongoose.Schema.Types.ObjectId,
+			ref: 'User',
+			required: true,
+			index: true,
+		},
 		// Información de la ruta
 		name: {
 			type: String,
@@ -103,18 +109,17 @@ const routeMonitorSchema = new mongoose.Schema(
 			foundAt: Date,
 		},
 
-		// Configuración de notificaciones
+		// Configuración de notificaciones (heredada del usuario pero puede personalizarse)
 		notifications: {
 			enabled: {
 				type: Boolean,
 				default: true,
 			},
 			telegram: {
-				chatId: String,
 				lastSent: Date,
 				cooldownMinutes: {
 					type: Number,
-					default: 60, // No enviar más de 1 alerta por hora del mismo vuelo
+					default: null,
 				},
 			},
 			onlyNewLows: {
@@ -150,12 +155,61 @@ const routeMonitorSchema = new mongoose.Schema(
 );
 
 // Índices
+routeMonitorSchema.index({userId: 1, isActive: 1});
 routeMonitorSchema.index({origin: 1, destination: 1});
 routeMonitorSchema.index({isActive: 1, lastChecked: 1});
 routeMonitorSchema.index({
 	'outboundDateRange.startDate': 1,
 	'outboundDateRange.endDate': 1,
 });
+
+// Middleware para actualizar stats del usuario cuando se crea/actualiza/elimina un monitor
+routeMonitorSchema.post('save', async function (doc) {
+	try {
+		await updateUserStats(doc.userId);
+	} catch (error) {
+		console.error('❌ Error actualizando stats del usuario:', error);
+	}
+});
+
+routeMonitorSchema.post('deleteOne', {document: true}, async function (doc) {
+	try {
+		await updateUserStats(doc.userId);
+	} catch (error) {
+		console.error(
+			'❌ Error actualizando stats del usuario después de eliminar:',
+			error
+		);
+	}
+});
+
+// Función helper para actualizar estadísticas del usuario
+async function updateUserStats(userId) {
+	const User = mongoose.model('User');
+	const RouteMonitor = mongoose.model('RouteMonitor');
+
+	const stats = await RouteMonitor.aggregate([
+		{$match: {userId: userId}},
+		{
+			$group: {
+				_id: null,
+				totalMonitors: {$sum: 1},
+				activeMonitors: {
+					$sum: {
+						$cond: [{$eq: ['$isActive', true]}, 1, 0],
+					},
+				},
+			},
+		},
+	]);
+
+	const userStats = stats[0] || {totalMonitors: 0, activeMonitors: 0};
+
+	await User.findByIdAndUpdate(userId, {
+		'stats.totalMonitors': userStats.totalMonitors,
+		'stats.activeMonitors': userStats.activeMonitors,
+	});
+}
 
 // Método para verificar si es tiempo de chequear
 routeMonitorSchema.methods.shouldCheck = function () {
@@ -169,7 +223,24 @@ routeMonitorSchema.methods.shouldCheck = function () {
 	return timeSinceLastCheck >= intervalMs;
 };
 
-// 🔥 NUEVO: Método para obtener fechas de búsqueda
+// Método para obtener el usuario asociado
+routeMonitorSchema.methods.getUser = async function () {
+	await this.populate('userId');
+	return this.userId;
+};
+
+// Método para obtener configuración de cooldown (usuario o monitor)
+routeMonitorSchema.methods.getCooldownMinutes = async function () {
+	if (this.notifications.telegram.cooldownMinutes !== null) {
+		return this.notifications.telegram.cooldownMinutes;
+	}
+
+	// Usar configuración del usuario
+	const user = await this.getUser();
+	return user.preferences.notifications.cooldownMinutes;
+};
+
+// Método para obtener fechas de búsqueda
 routeMonitorSchema.methods.getSearchDates = function () {
 	const outboundDates = this.generateDateRange(
 		this.outboundDateRange.startDate,
@@ -190,7 +261,7 @@ routeMonitorSchema.methods.getSearchDates = function () {
 	return {outbound: outboundDates, inbound: inboundDates};
 };
 
-// 🔥 NUEVO: Generar rango de fechas
+// Generar rango de fechas
 routeMonitorSchema.methods.generateDateRange = function (
 	startDate,
 	endDate,
@@ -226,7 +297,6 @@ routeMonitorSchema.methods.generateDateRange = function (
 };
 
 // Método para actualizar estadísticas
-// Método para actualizar estadísticas (CORREGIDO)
 routeMonitorSchema.methods.updateStats = function (prices) {
 	if (!prices || prices.length === 0) {
 		console.log('📊 No hay precios para actualizar stats');
@@ -235,7 +305,7 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 
 	this.stats.totalChecks += 1;
 
-	// 🔥 FIX: Filtrar y validar precios correctamente
+	// Filtrar y validar precios correctamente
 	const amounts = prices
 		.map((p) => {
 			if (typeof p === 'object' && p.amount) {
@@ -266,7 +336,7 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 		const min = Math.min(...amounts);
 		const max = Math.max(...amounts);
 
-		// 🔥 FIX: Validar que los cálculos sean números válidos
+		// Validar que los cálculos sean números válidos
 		if (!isNaN(avg) && isFinite(avg)) {
 			this.stats.averagePrice = Math.round(avg * 100) / 100; // Redondear a 2 decimales
 		}
@@ -289,26 +359,64 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 	}
 };
 
-// Método para verificar si un precio amerita alerta
-routeMonitorSchema.methods.shouldAlert = function (price) {
-	if (!this.notifications.enabled) return false;
-	if (price.amount > this.priceThreshold) return false;
-
-	if (
-		this.notifications.onlyNewLows &&
-		this.bestPrice &&
-		price.amount >= this.bestPrice.amount
-	) {
+// 🔥 FIX: Método mejorado para verificar si un precio amerita alerta
+routeMonitorSchema.methods.shouldAlert = async function (price) {
+	if (!this.notifications.enabled) {
+		console.log(`🔇 Notificaciones deshabilitadas para ${this.name}`);
 		return false;
 	}
 
-	if (this.notifications.telegram.lastSent) {
-		const timeSinceLastAlert =
-			new Date() - this.notifications.telegram.lastSent;
-		const cooldownMs = this.notifications.telegram.cooldownMinutes * 60 * 1000;
-		if (timeSinceLastAlert < cooldownMs) return false;
+	if (price.amount > this.priceThreshold) {
+		console.log(
+			`💰 Precio €${price.amount} supera umbral €${this.priceThreshold} para ${this.name}`
+		);
+		return false;
 	}
 
+	// Verificar si el usuario puede recibir más alertas hoy
+	const user = await this.getUser();
+	if (!user.canReceiveAlert()) {
+		console.log(
+			`⚠️ Usuario ${user.firstName} ha alcanzado el límite de alertas diarias`
+		);
+		return false;
+	}
+
+	// Verificar si está en horas silenciosas
+	if (user.isInQuietHours()) {
+		console.log(`🔇 Usuario ${user.firstName} está en horas silenciosas`);
+		return false;
+	}
+
+	if (this.notifications.onlyNewLows) {
+		if (this.bestPrice && price.amount >= this.bestPrice.amount) {
+			console.log(
+				`📊 Precio €${price.amount} no es mejor que mejor precio €${this.bestPrice.amount} para ${this.name}`
+			);
+			return false;
+		}
+	}
+
+	if (this.notifications.telegram.lastSent) {
+		const cooldownMinutes = await this.getCooldownMinutes();
+		const timeSinceLastAlert =
+			new Date() - this.notifications.telegram.lastSent;
+		const cooldownMs = cooldownMinutes * 60 * 1000;
+
+		if (timeSinceLastAlert < cooldownMs) {
+			const remainingMinutes = Math.ceil(
+				(cooldownMs - timeSinceLastAlert) / (60 * 1000)
+			);
+			console.log(
+				`⏰ Monitor ${this.name} en cooldown. Faltan ${remainingMinutes} minutos`
+			);
+			return false;
+		}
+	}
+
+	console.log(
+		`✅ Alerta autorizada para ${this.name}: €${price.amount} (Usuario: ${user.firstName})`
+	);
 	return true;
 };
 
