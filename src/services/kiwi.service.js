@@ -515,7 +515,6 @@ class KiwiService {
 
 		const formatted = cityMapping[code.toUpperCase()];
 		if (formatted) {
-			console.log(`📍 Código ${code} → ${formatted}`);
 			return formatted;
 		}
 
@@ -549,7 +548,6 @@ class KiwiService {
 				const inbound = itinerary.inbound?.sectorSegments?.[0]?.segment;
 
 				console.log(`  Itinerario ${index + 1}:`);
-				console.log(`    ID: ${itinerary.id}`);
 				console.log(
 					`    Precio: €${itinerary.priceEur?.amount || itinerary.price?.amount}`
 				);

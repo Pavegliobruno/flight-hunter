@@ -3,6 +3,7 @@ const KiwiService = require('./kiwi.service');
 const TelegramService = require('./telegram.service');
 const RouteMonitor = require('../models/routeMonitor.models');
 const Flight = require('../models/flight.model');
+const User = require('../models/user.model');
 
 class MonitoringService {
 	constructor() {
@@ -75,7 +76,7 @@ class MonitoringService {
 			console.log('\n🔍 === INICIO CICLO DE MONITOREO ===');
 			const startTime = Date.now();
 
-			// Obtener rutas activas que necesitan verificación
+			// Obtener rutas activas con información del usuario
 			const routesToCheck = await RouteMonitor.find({
 				isActive: true,
 				$or: [
@@ -89,7 +90,7 @@ class MonitoringService {
 						},
 					},
 				],
-			});
+			}).populate('userId');
 
 			console.log(`📋 Rutas a verificar: ${routesToCheck.length}`);
 
@@ -98,20 +99,54 @@ class MonitoringService {
 				return;
 			}
 
-			// Procesar cada ruta
-			for (const route of routesToCheck) {
-				try {
-					await this.checkRoute(route);
-
-					// Delay entre requests para no saturar la API
-					await this.delay(5000); // 5 segundos entre cada consulta
-				} catch (error) {
-					console.error(
-						`❌ Error verificando ruta ${route.name}:`,
-						error.message
-					);
-					this.stats.errorsToday++;
+			// Agrupar rutas por usuario para optimizar notificaciones
+			const userRoutes = {};
+			routesToCheck.forEach((route) => {
+				const userId = route.userId._id.toString();
+				if (!userRoutes[userId]) {
+					userRoutes[userId] = {
+						user: route.userId,
+						routes: [],
+					};
 				}
+				userRoutes[userId].routes.push(route);
+			});
+
+			console.log(
+				`👥 Usuarios con rutas activas: ${Object.keys(userRoutes).length}`
+			);
+
+			// Procesar cada usuario
+			for (const [userId, userData] of Object.entries(userRoutes)) {
+				const {user, routes} = userData;
+
+				console.log(
+					`\n👤 Procesando ${routes.length} rutas de ${user.firstName} (@${user.username})`
+				);
+
+				if (!user.canReceiveAlert()) {
+					console.log(
+						`⚠️ Usuario ${user.firstName} ha alcanzado el límite de alertas diarias`
+					);
+					continue;
+				}
+
+				for (const route of routes) {
+					try {
+						await this.checkRoute(route, user);
+
+						await this.delay(5000);
+					} catch (error) {
+						console.error(
+							`❌ Error verificando ruta ${route.name} de ${user.firstName}:`,
+							error.message
+						);
+						this.stats.errorsToday++;
+					}
+				}
+
+				// Delay entre usuarios
+				await this.delay(2000);
 			}
 
 			const duration = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -124,22 +159,23 @@ class MonitoringService {
 		}
 	}
 
-	async checkRoute(routeMonitor) {
+	// Ahora recibe el usuario como parámetro
+	async checkRoute(routeMonitor, user) {
 		try {
 			console.log(
-				`🔎 Verificando: ${routeMonitor.name} (${routeMonitor.origin} → ${routeMonitor.destination})`
+				`🔎 Verificando: ${routeMonitor.name} (${routeMonitor.origin} → ${routeMonitor.destination}) - ${user.firstName}`
 			);
 
 			this.stats.checksToday++;
 			routeMonitor.lastChecked = new Date();
 
-			// Obtener fechas de búsqueda usando el nuevo método
+			// Obtener fechas de búsqueda usando el método del modelo
 			const searchDates = routeMonitor.getSearchDates();
 
 			let allFlights = [];
 			let bestPrice = null;
 
-			//  Buscar combinaciones de ida y vuelta
+			// Buscar combinaciones de ida y vuelta
 			if (
 				routeMonitor.flightType === 'roundtrip' &&
 				searchDates.inbound.length > 0
@@ -236,7 +272,7 @@ class MonitoringService {
 				await this.saveFlights(allFlights);
 			}
 
-			// 🔥 FIX: Actualizar estadísticas con validación
+			// Actualizar estadísticas con validación
 			if (allFlights.length > 0) {
 				// Extraer solo los precios válidos
 				const validPrices = allFlights
@@ -257,18 +293,20 @@ class MonitoringService {
 					routeMonitor.updateStats(validPrices);
 				} else {
 					console.log('📊 No hay precios válidos para actualizar stats');
-					// Solo incrementar el contador de checks
 					routeMonitor.stats.totalChecks += 1;
 				}
 			} else {
 				console.log('📊 No se encontraron vuelos');
-				// Solo incrementar el contador de checks
 				routeMonitor.stats.totalChecks += 1;
 			}
 
 			// Verificar si debe enviar alerta
-			if (bestPrice && routeMonitor.shouldAlert(bestPrice)) {
-				const alertSent = await this.sendPriceAlert(bestPrice, routeMonitor);
+			if (bestPrice && (await routeMonitor.shouldAlert(bestPrice))) {
+				const alertSent = await this.sendPriceAlert(
+					bestPrice,
+					routeMonitor,
+					user
+				);
 
 				if (alertSent) {
 					// Actualizar mejor precio si es menor
@@ -290,7 +328,7 @@ class MonitoringService {
 				}
 			}
 
-			//  Guardar con manejo de errores
+			// Guardar con manejo de errores
 			try {
 				await routeMonitor.save();
 			} catch (saveError) {
@@ -354,17 +392,21 @@ class MonitoringService {
 		}
 	}
 
-	async sendPriceAlert(flight, routeMonitor) {
+	// Ahora pasa el usuario al servicio de Telegram
+	async sendPriceAlert(flight, routeMonitor, user) {
 		try {
 			const success = await this.telegramService.sendPriceAlert(
 				flight,
-				routeMonitor
+				routeMonitor,
+				user
 			);
 
 			if (success) {
-				console.log(`  📱 Alerta enviada: €${flight.price.amount}`);
+				console.log(
+					`  📱 Alerta enviada a ${user.firstName}: €${flight.price.amount}`
+				);
 			} else {
-				console.log(`  ❌ No se pudo enviar alerta`);
+				console.log(`  ❌ No se pudo enviar alerta a ${user.firstName}`);
 			}
 
 			return success;
@@ -376,17 +418,26 @@ class MonitoringService {
 
 	async sendDailyReport() {
 		try {
+			const activeUsers = await User.countDocuments({isActive: true});
 			const activeRoutes = await RouteMonitor.countDocuments({isActive: true});
 			const todayFlights = await Flight.countDocuments({
 				scrapedAt: {$gte: new Date(Date.now() - 24 * 60 * 60 * 1000)},
 			});
 
+			// Top usuarios más activos
+			const topUsers = await User.find({isActive: true})
+				.sort({'stats.alertsReceived': -1})
+				.limit(3)
+				.select('firstName stats.alertsReceived stats.activeMonitors');
+
 			const stats = {
+				activeUsers,
 				activeRoutes,
 				checksToday: this.stats.checksToday,
 				alertsToday: this.stats.alertsToday,
 				flightsFound: todayFlights,
 				errorsToday: this.stats.errorsToday,
+				topUsers,
 			};
 
 			await this.telegramService.sendMonitoringStatus(stats);
