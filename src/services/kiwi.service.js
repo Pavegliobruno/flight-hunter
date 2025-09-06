@@ -363,12 +363,12 @@ class KiwiService {
 					enableThrowAwayTicketing: true,
 					enableTrueHiddenCity: true,
 					transportTypes: ['FLIGHT'],
-					contentProviders: ['KIWI'],
-					flightsApiLimit: 25,
-					limit: 10,
+					contentProviders: ['KIWI', 'KAYAK'],
+					flightsApiLimit: 50,
+					limit: 20,
 				},
 				options: {
-					sortBy: 'QUALITY',
+					sortBy: 'PRICE', // Or QUALITY
 					mergePriceDiffRule: 'INCREASED',
 					currency: 'eur',
 					apiUrl: null,
@@ -437,7 +437,7 @@ class KiwiService {
 
 			// Argentina
 			BUE: 'City:buenos-aires_ar',
-			EZE: 'Airport:ezeiza_ar',
+			EZE: 'Station:airport:EZE',
 			AEP: 'Airport:jorge-newbery-airfield_ar',
 			COR: 'City:cordoba_ar',
 			MDZ: 'Airport:mendoza_ar',
