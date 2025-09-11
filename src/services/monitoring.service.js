@@ -46,11 +46,12 @@ class MonitoringService {
 			}
 		);
 
-		// Reporte diario a las 9 AM
+		// Reporte diario a las 9 AM + limpieza de DB
 		cron.schedule(
 			'0 9 * * *',
 			async () => {
 				await this.sendDailyReport();
+				await this.cleanupOldFlights();
 				this.resetDailyStats();
 			},
 			{
@@ -398,6 +399,22 @@ class MonitoringService {
 			console.log('📊 Reporte diario enviado');
 		} catch (error) {
 			console.error('❌ Error enviando reporte diario:', error);
+		}
+	}
+
+	async cleanupOldFlights() {
+		try {
+			const twoDaysAgo = new Date();
+			twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+			twoDaysAgo.setHours(0, 0, 0, 0);
+
+			const result = await Flight.deleteMany({
+				scrapedAt: {$lt: twoDaysAgo},
+			});
+
+			console.log(`Vuelos eliminados: ${result.deletedCount}`);
+		} catch (error) {
+			console.error('Error en limpieza de vuelos antiguos:', error);
 		}
 	}
 
