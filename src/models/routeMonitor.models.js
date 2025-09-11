@@ -76,6 +76,13 @@ const routeMonitorSchema = new mongoose.Schema(
 			max: 9,
 		},
 
+		maxStops: {
+			type: Number,
+			min: 0,
+			max: 5,
+			default: null,
+		},
+
 		// Estado del monitoreo
 		isActive: {
 			type: Boolean,
@@ -157,6 +164,35 @@ routeMonitorSchema.index({
 	'outboundDateRange.endDate': 1,
 });
 
+// Método para generar filtros de la API de Kiwi
+routeMonitorSchema.methods.generateKiwiApiFilters = function () {
+	const filters = {
+		allowReturnFromDifferentCity: false,
+		allowChangeInboundDestination: true,
+		allowChangeInboundSource: true,
+		allowDifferentStationConnection: false,
+		enableSelfTransfer: false,
+		enableThrowAwayTicketing: true,
+		enableTrueHiddenCity: true,
+		transportTypes: ['FLIGHT'],
+		contentProviders: ['KIWI'],
+		flightsApiLimit: 25,
+		limit: 20,
+	};
+
+	// Agregar filtro de precio máximo
+	if (this.priceThreshold) {
+		filters.price = {end: this.priceThreshold};
+	}
+
+	// Agregar filtro de escalas máximas
+	if (this.maxStops !== null && this.maxStops !== undefined) {
+		filters.maxStopsCount = this.maxStops;
+	}
+
+	return filters;
+};
+
 // Método para verificar si es tiempo de chequear
 routeMonitorSchema.methods.shouldCheck = function () {
 	if (!this.isActive) return false;
@@ -169,7 +205,7 @@ routeMonitorSchema.methods.shouldCheck = function () {
 	return timeSinceLastCheck >= intervalMs;
 };
 
-// 🔥 NUEVO: Método para obtener fechas de búsqueda
+// Método para obtener fechas de búsqueda
 routeMonitorSchema.methods.getSearchDates = function () {
 	const outboundDates = this.generateDateRange(
 		this.outboundDateRange.startDate,
@@ -190,7 +226,7 @@ routeMonitorSchema.methods.getSearchDates = function () {
 	return {outbound: outboundDates, inbound: inboundDates};
 };
 
-// 🔥 NUEVO: Generar rango de fechas
+// Generar rango de fechas
 routeMonitorSchema.methods.generateDateRange = function (
 	startDate,
 	endDate,
@@ -226,7 +262,6 @@ routeMonitorSchema.methods.generateDateRange = function (
 };
 
 // Método para actualizar estadísticas
-// Método para actualizar estadísticas (CORREGIDO)
 routeMonitorSchema.methods.updateStats = function (prices) {
 	if (!prices || prices.length === 0) {
 		console.log('📊 No hay precios para actualizar stats');
@@ -235,7 +270,7 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 
 	this.stats.totalChecks += 1;
 
-	// 🔥 FIX: Filtrar y validar precios correctamente
+	// Filtrar y validar precios correctamente
 	const amounts = prices
 		.map((p) => {
 			if (typeof p === 'object' && p.amount) {
@@ -266,7 +301,7 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 		const min = Math.min(...amounts);
 		const max = Math.max(...amounts);
 
-		// 🔥 FIX: Validar que los cálculos sean números válidos
+		// Validar que los cálculos sean números válidos
 		if (!isNaN(avg) && isFinite(avg)) {
 			this.stats.averagePrice = Math.round(avg * 100) / 100; // Redondear a 2 decimales
 		}

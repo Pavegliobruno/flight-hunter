@@ -29,7 +29,7 @@ class KiwiService {
 		};
 	}
 
-	async searchFlights(searchParams) {
+	async searchFlights(searchParams, routeMonitor = null) {
 		try {
 			const {
 				origin,
@@ -320,41 +320,49 @@ class KiwiService {
   }
 }`;
 
-			const variables = {
-				search: {
-					itinerary: {
-						source: {
-							ids: [originFormatted],
-						},
-						destination: {
-							ids: [destinationFormatted],
-						},
-						outboundDepartureDate: {
-							start: `${departureDate}T00:00:00`,
-							end: `${departureDate}T23:59:59`,
-						},
-						...(returnDate && {
-							inboundDepartureDate: {
-								start: `${returnDate}T00:00:00`,
-								end: `${returnDate}T23:59:59`,
-							},
-						}),
+			const searchObject = {
+				itinerary: {
+					source: {
+						ids: [originFormatted],
 					},
-					passengers: {
-						adults: passengers,
-						children: 0,
-						infants: 0,
-						adultsHoldBags: [0],
-						adultsHandBags: [0],
-						childrenHoldBags: [],
-						childrenHandBags: [],
+					destination: {
+						ids: [destinationFormatted],
 					},
-					cabinClass: {
-						cabinClass: 'ECONOMY',
-						applyMixedClasses: false,
+					outboundDepartureDate: {
+						start: `${departureDate}T00:00:00`,
+						end: `${departureDate}T23:59:59`,
 					},
+					...(returnDate && {
+						inboundDepartureDate: {
+							start: `${returnDate}T00:00:00`,
+							end: `${returnDate}T23:59:59`,
+						},
+					}),
 				},
-				filter: {
+				passengers: {
+					adults: passengers,
+					children: 0,
+					infants: 0,
+					adultsHoldBags: [0],
+					adultsHandBags: [0],
+					childrenHoldBags: [],
+					childrenHandBags: [],
+				},
+				cabinClass: {
+					cabinClass: 'ECONOMY',
+					applyMixedClasses: false,
+				},
+			};
+
+			let apiFilters;
+			if (
+				routeMonitor &&
+				typeof routeMonitor.generateKiwiApiFilters === 'function'
+			) {
+				apiFilters = routeMonitor.generateKiwiApiFilters();
+			} else {
+				// Filtros por defecto si no hay routeMonitor
+				apiFilters = {
 					allowReturnFromDifferentCity: false,
 					allowChangeInboundDestination: true,
 					allowChangeInboundSource: true,
@@ -364,9 +372,14 @@ class KiwiService {
 					enableTrueHiddenCity: true,
 					transportTypes: ['FLIGHT'],
 					contentProviders: ['KIWI'],
-					flightsApiLimit: 50,
+					flightsApiLimit: 25,
 					limit: 20,
-				},
+				};
+			}
+
+			const variables = {
+				search: searchObject,
+				filter: apiFilters,
 				options: {
 					sortBy: 'QUALITY', // PRICE or QUALITY
 					mergePriceDiffRule: 'INCREASED',

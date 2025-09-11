@@ -133,13 +133,13 @@ class MonitoringService {
 			this.stats.checksToday++;
 			routeMonitor.lastChecked = new Date();
 
-			// Obtener fechas de búsqueda usando el nuevo método
+			// Obtener fechas de búsqueda usando el método del modelo
 			const searchDates = routeMonitor.getSearchDates();
 
 			let allFlights = [];
 			let bestPrice = null;
 
-			//  Buscar combinaciones de ida y vuelta
+			// Buscar combinaciones de ida y vuelta
 			if (
 				routeMonitor.flightType === 'roundtrip' &&
 				searchDates.inbound.length > 0
@@ -156,8 +156,10 @@ class MonitoringService {
 								passengers: routeMonitor.passengers,
 							};
 
-							const rawData =
-								await this.kiwiService.searchFlights(searchParams);
+							const rawData = await this.kiwiService.searchFlights(
+								searchParams,
+								routeMonitor
+							);
 							const flights = this.kiwiService.parseFlightData(
 								rawData,
 								searchParams
@@ -200,7 +202,10 @@ class MonitoringService {
 							passengers: routeMonitor.passengers,
 						};
 
-						const rawData = await this.kiwiService.searchFlights(searchParams);
+						const rawData = await this.kiwiService.searchFlights(
+							searchParams,
+							routeMonitor
+						);
 						const flights = this.kiwiService.parseFlightData(
 							rawData,
 							searchParams
@@ -236,7 +241,7 @@ class MonitoringService {
 				await this.saveFlights(allFlights);
 			}
 
-			// 🔥 FIX: Actualizar estadísticas con validación
+			// Actualizar estadísticas con validación
 			if (allFlights.length > 0) {
 				// Extraer solo los precios válidos
 				const validPrices = allFlights
@@ -290,7 +295,7 @@ class MonitoringService {
 				}
 			}
 
-			//  Guardar con manejo de errores
+			// Guardar con manejo de errores
 			try {
 				await routeMonitor.save();
 			} catch (saveError) {
