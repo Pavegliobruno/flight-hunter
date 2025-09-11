@@ -72,7 +72,7 @@ TELEGRAM_CHAT_ID=
 ENABLE_MONITORING=true
 MONITORING_INTERVAL=30
 DEFAULT_PRICE_THRESHOLD=500
-PORT=3000
+PORT=4000
 ```
 
 ## 🏃‍♂️ Uso
@@ -94,7 +94,7 @@ npm start
 #### Ejemplo 1: Berlin → Estambul (ida y vuelta)
 
 ```bash
-curl -X POST http://localhost:3000/monitors \
+curl -X POST http://localhost:4000/monitors \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Berlin - Estambul (IDA Y VUELTA)",
@@ -115,7 +115,7 @@ curl -X POST http://localhost:3000/monitors \
 #### Ejemplo 2: Viena → Berlin (solo ida)
 
 ```bash
-curl -X POST http://localhost:3000/monitors \
+curl -X POST http://localhost:4000/monitors \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Viena - Berlin (IDA)",
@@ -135,7 +135,7 @@ curl -X POST http://localhost:3000/monitors \
 #### Ejemplo 3: Viena → Berlin (ida y vuelta)
 
 ```bash
-curl -X POST http://localhost:3000/monitors \
+curl -X POST http://localhost:4000/monitors \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Viena - Berlin (IDA Y VUELTA)",
@@ -197,31 +197,31 @@ Ruta: Berlin - Estambul IDA Y VUELTA
 ### **Ver todos los monitores**
 
 ```bash
-curl http://localhost:3000/monitors
+curl http://localhost:4000/monitors
 ```
 
 ### **Forzar verificación manual**
 
 ```bash
-curl -X POST http://localhost:3000/monitors/MONITOR_ID/check
+curl -X POST http://localhost:4000/monitors/MONITOR_ID/check
 ```
 
 ### **Activar/desactivar monitor**
 
 ```bash
-curl -X PATCH http://localhost:3000/monitors/MONITOR_ID/toggle
+curl -X PATCH http://localhost:4000/monitors/MONITOR_ID/toggle
 ```
 
 ### **Ver estado del sistema**
 
 ```bash
-curl http://localhost:3000/monitoring/status
+curl http://localhost:4000/monitoring/status
 ```
 
 ### **Testear Telegram**
 
 ```bash
-curl -X POST http://localhost:3000/telegram/test
+curl -X POST http://localhost:4000/telegram/test
 ```
 
 ## 🛫 Códigos de aeropuertos soportados
@@ -251,7 +251,7 @@ curl -X POST http://localhost:3000/telegram/test
 
 ```bash
 # Alertas más frecuentes (no solo nuevos mínimos)
-curl -X PUT http://localhost:3000/monitors/MONITOR_ID \
+curl -X PUT http://localhost:4000/monitors/MONITOR_ID \
   -H "Content-Type: application/json" \
   -d '{
     "notifications": {
@@ -263,7 +263,7 @@ curl -X PUT http://localhost:3000/monitors/MONITOR_ID \
   }'
 
 # Alertas más estrictas (solo nuevos mínimos + cooldown largo)
-curl -X PUT http://localhost:3000/monitors/MONITOR_ID \
+curl -X PUT http://localhost:4000/monitors/MONITOR_ID \
   -H "Content-Type: application/json" \
   -d '{
     "notifications": {
@@ -330,7 +330,7 @@ TELEGRAM_CHAT_ID=...            # Tu chat ID
 ```bash
 # Crear monitores para varios destinos desde Buenos Aires
 for destination in MAD BCN FCO CDG AMS VIE; do
-  curl -X POST http://localhost:3000/monitors \
+  curl -X POST http://localhost:4000/monitors \
     -H "Content-Type: application/json" \
     -d "{
       \"name\": \"BUE -> $destination\",
@@ -376,7 +376,7 @@ kiwi-flight-scraper/
 
 ```bash
 # Testear bot
-curl -X POST http://localhost:3000/telegram/test
+curl -X POST http://localhost:4000/telegram/test
 
 # Verificar configuración
 echo $TELEGRAM_BOT_TOKEN
@@ -387,7 +387,7 @@ echo $TELEGRAM_CHAT_ID
 
 ```bash
 # Verificar estado
-curl http://localhost:3000/monitoring/status
+curl http://localhost:4000/monitoring/status
 
 # Verificar configuración
 echo $ENABLE_MONITORING  # debe ser 'true'

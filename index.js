@@ -24,7 +24,7 @@ console.log(
 );
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 
 // Instancias de servicios
 const monitoringService = new MonitoringService();
