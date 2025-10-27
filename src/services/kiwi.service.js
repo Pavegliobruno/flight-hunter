@@ -453,6 +453,7 @@ class KiwiService {
 			EZE: 'Station:airport:EZE',
 			AEP: 'Airport:jorge-newbery-airfield_ar',
 			COR: 'City:cordoba_ar',
+			ROS: 'City:rosario_sf_ar',
 			MDZ: 'Airport:mendoza_ar',
 			IGU: 'Airport:iguazu-falls_ar',
 			USH: 'Airport:ushuaia_ar',
