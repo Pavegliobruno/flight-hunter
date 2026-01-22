@@ -40,36 +40,46 @@ class TelegramService {
 			{command: 'cancel', description: 'Cancelar operación en curso'},
 		]);
 
-		this.bot.onText(/\/(\w+)(.*)/, async (msg, match) => {
-			try {
-				console.log(
-					`📱 Comando recibido: ${match[1]} | Texto completo: "${msg.text}"`
-				);
-				await this.commandsService.handleCommand(msg, match);
-			} catch (error) {
-				console.error('❌ Error manejando comando:', error);
-				await this.bot.sendMessage(
-					msg.chat.id,
-					'❌ Error procesando el comando. Intenta nuevamente.'
-				);
-			}
-		});
+		// Set para trackear mensajes ya procesados (evita duplicados)
+		this.processedMessages = new Set();
 
-		// Manejar mensajes no reconocidos (que no sean comandos)
 		this.bot.on('message', async (msg) => {
-			// Solo responder si no es un comando
-			if (!msg.text?.startsWith('/')) {
-				// Verificar si hay conversación activa (ej: /create)
+			// Evitar procesar el mismo mensaje dos veces
+			const msgKey = `${msg.chat.id}_${msg.message_id}`;
+			if (this.processedMessages.has(msgKey)) {
+				return;
+			}
+			this.processedMessages.add(msgKey);
+
+			// Limpiar cache cada 1000 mensajes
+			if (this.processedMessages.size > 1000) {
+				this.processedMessages.clear();
+			}
+
+			try {
+				// Si es un comando
+				if (msg.text?.startsWith('/')) {
+					const match = msg.text.match(/\/(\w+)(.*)/);
+					if (match && this.commandsService) {
+						console.log(`📱 Comando: ${match[1]}`);
+						await this.commandsService.handleCommand(msg, match);
+					}
+					return;
+				}
+
+				// Si no es comando, verificar conversación activa
 				if (this.commandsService) {
 					const handled = await this.commandsService.handleMessage(msg);
 					if (handled) return;
 				}
 
+				// Solo enviar saludo si no hay conversación activa
 				this.bot.sendMessage(
 					msg.chat.id,
-					'👋 ¡Hola! Soy el bot de monitoreo de vuelos.\n\n' +
-						'Usa /help para ver los comandos disponibles o /monitors para ver tus rutas monitoreadas.'
+					'Usa /help para ver los comandos disponibles.'
 				);
+			} catch (error) {
+				console.error('❌ Error procesando mensaje:', error);
 			}
 		});
 

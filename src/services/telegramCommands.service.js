@@ -214,18 +214,20 @@ ID: <code>${user.chatId}</code>`;
 		const chatId = msg.chat.id.toString();
 		const text = msg.text?.trim();
 
-		// Verificar usuario
-		const user = await User.findOne({ chatId });
-		if (!user || user.status !== 'active') {
-			return false;
-		}
-
-		// Si no hay conversación activa, ignorar
+		// Si no hay conversación activa, ignorar primero (más rápido)
 		if (!this.conversationState.has(chatId)) {
 			return false;
 		}
 
+		// Verificar usuario solo si hay conversación activa
+		const user = await User.findOne({ chatId });
+		if (!user || user.status !== 'active') {
+			console.log(`⚠️ Usuario no activo: ${chatId}, status: ${user?.status}`);
+			return false;
+		}
+
 		try {
+			console.log(`💬 Procesando respuesta en conversación: "${text}" (paso: ${this.conversationState.get(chatId)?.step})`);
 			await this.processConversationStep(chatId, text);
 			return true;
 		} catch (error) {
