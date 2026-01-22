@@ -305,6 +305,7 @@ ${statusText} | ${monitorsCount} monitores`;
 
 		if (user.status === 'active') {
 			buttons.push([
+				{ text: 'Monitores', callback_data: `usermonitors_${user.chatId}` },
 				{ text: 'Bloquear', callback_data: `blockuser_${user.chatId}` },
 			]);
 		} else if (user.status === 'blocked') {
@@ -367,20 +368,10 @@ ${statusText} | ${monitorsCount} monitores`;
 
 	async handleListMonitors(chatId) {
 		try {
-			// Verificar si es admin para mostrar todos o solo los suyos
-			const user = await User.findOne({ chatId: chatId.toString() });
-			const isAdmin = user?.isAdmin;
-
-			let monitors;
-			if (isAdmin) {
-				// Admin ve todos los monitores
-				monitors = await RouteMonitor.find({}).sort({createdAt: -1});
-			} else {
-				// Usuario normal ve solo sus monitores
-				monitors = await RouteMonitor.find({
-					'notifications.telegram.chatId': chatId.toString()
-				}).sort({createdAt: -1});
-			}
+			// Siempre mostrar solo los monitores del usuario actual
+			const monitors = await RouteMonitor.find({
+				'notifications.telegram.chatId': chatId.toString()
+			}).sort({createdAt: -1});
 
 			if (monitors.length === 0) {
 				await this.sendMessage(chatId, 'No hay monitores configurados.\n\nUsa /create para crear uno.');
@@ -811,6 +802,9 @@ Usa /monitors para ver todos tus monitores.`);
 				case 'unblockuser':
 					await this.handleUnblockUserCallback(chatId, messageId, id, callbackQuery.id);
 					break;
+				case 'usermonitors':
+					await this.handleUserMonitorsCallback(chatId, id, callbackQuery.id);
+					break;
 				default:
 					await this.telegramService.bot.answerCallbackQuery(callbackQuery.id, {
 						text: 'Acción no reconocida',
@@ -928,6 +922,34 @@ Usa /monitors para ver todos tus monitores.`);
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
 			text: 'Usuario desbloqueado',
 		});
+	}
+
+	async handleUserMonitorsCallback(chatId, userChatId, callbackId) {
+		const user = await User.findOne({ chatId: userChatId });
+		if (!user) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Usuario no encontrado',
+			});
+			return;
+		}
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+
+		const displayName = user.firstName || user.username || user.chatId;
+		const monitors = await RouteMonitor.find({
+			'notifications.telegram.chatId': userChatId
+		}).sort({ createdAt: -1 });
+
+		if (monitors.length === 0) {
+			await this.sendMessage(chatId, `<b>${displayName}</b> no tiene monitores.`);
+			return;
+		}
+
+		await this.sendMessage(chatId, `Monitores de <b>${displayName}</b>:`);
+
+		for (const monitor of monitors) {
+			await this.sendMonitorCard(chatId, monitor);
+		}
 	}
 
 	async handlePauseCallback(chatId, messageId, monitorId, callbackId) {
