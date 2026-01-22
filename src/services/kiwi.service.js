@@ -545,19 +545,32 @@ class KiwiService {
 
 	async searchLocations(term) {
 		try {
+			console.log(`🔍 Buscando ubicación: "${term}"`);
+
 			const response = await axios.get('https://api.skypicker.com/locations', {
 				params: {
 					term: term,
-					location_types: 'airport,city',
-					limit: 5,
+					limit: 8,
 					locale: 'es-ES',
+					active_only: true,
 				},
-				headers: { 'Accept-Encoding': 'gzip' },
 				timeout: 10000,
 			});
-			return response.data.locations || [];
+
+			// Filtrar solo ciudades y aeropuertos
+			const allLocations = response.data.locations || [];
+			const locations = allLocations.filter(
+				(loc) => loc.type === 'city' || loc.type === 'airport'
+			).slice(0, 5);
+
+			console.log(`📍 Encontradas ${locations.length} ubicaciones para "${term}"`);
+			return locations;
 		} catch (error) {
 			console.error('❌ Error buscando ubicaciones:', error.message);
+			if (error.response) {
+				console.error('Status:', error.response.status);
+				console.error('Data:', JSON.stringify(error.response.data, null, 2));
+			}
 			return [];
 		}
 	}

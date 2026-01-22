@@ -35,12 +35,26 @@ class TelegramCommandsService {
 
 			// Si el usuario está pendiente o bloqueado, mostrar mensaje apropiado
 			if (user.status === 'pending') {
-				await this.sendMessage(chatId, 'Tu solicitud está pendiente de aprobación.');
+				await this.sendMessage(
+					chatId,
+					`<b>Solicitud pendiente</b>
+
+Tu solicitud de acceso está siendo revisada. Te notificaremos cuando sea aprobada.
+
+<i>Consultas? Contacta a @pavegliobruno</i>`
+				);
 				return;
 			}
 
 			if (user.status === 'blocked') {
-				await this.sendMessage(chatId, 'No tenés acceso a este bot.');
+				await this.sendMessage(
+					chatId,
+					`<b>Acceso denegado</b>
+
+No tenés acceso a este bot.
+
+<i>Si crees que es un error, contacta a @pavegliobruno</i>`
+				);
 				return;
 			}
 
@@ -79,7 +93,7 @@ class TelegramCommandsService {
 
 	async getOrCreateUser(msg) {
 		const chatId = msg.chat.id.toString();
-		let user = await User.findOne({ chatId });
+		let user = await User.findOne({chatId});
 
 		if (!user) {
 			// Usuario nuevo
@@ -101,7 +115,9 @@ class TelegramCommandsService {
 				await this.notifyAdminNewUser(user);
 			}
 
-			console.log(`Nuevo usuario: ${user.firstName || user.username || chatId} (${user.status})`);
+			console.log(
+				`Nuevo usuario: ${user.firstName || user.username || chatId} (${user.status})`
+			);
 		} else {
 			// Actualizar última actividad
 			user.lastActivity = new Date();
@@ -129,8 +145,8 @@ ID: <code>${user.chatId}</code>`;
 			reply_markup: {
 				inline_keyboard: [
 					[
-						{ text: 'Aprobar', callback_data: `approve_${user.chatId}` },
-						{ text: 'Rechazar', callback_data: `reject_${user.chatId}` },
+						{text: 'Aprobar', callback_data: `approve_${user.chatId}`},
+						{text: 'Rechazar', callback_data: `reject_${user.chatId}`},
 					],
 				],
 			},
@@ -147,7 +163,7 @@ ID: <code>${user.chatId}</code>`;
 		}
 
 		// Verificar usuario solo si hay conversación activa
-		const user = await User.findOne({ chatId });
+		const user = await User.findOne({chatId});
 		if (!user || user.status !== 'active') {
 			return false;
 		}
@@ -157,7 +173,10 @@ ID: <code>${user.chatId}</code>`;
 			return true;
 		} catch (error) {
 			console.error('Error procesando mensaje:', error);
-			await this.sendMessage(chatId, 'Error procesando tu respuesta. Intenta nuevamente.');
+			await this.sendMessage(
+				chatId,
+				'Error procesando tu respuesta. Intenta nuevamente.'
+			);
 			return true;
 		}
 	}
@@ -170,13 +189,15 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 <b>Comandos:</b>
 /create - Crear un nuevo monitor
 /monitors - Ver y gestionar monitores
-/help - Ayuda`;
+/help - Ayuda
+
+<i>Dudas o sugerencias? Contacta a @pavegliobruno</i>`;
 
 		await this.sendMessage(chatId, message);
 	}
 
 	async handleHelp(chatId) {
-		const user = await User.findOne({ chatId: chatId.toString() });
+		const user = await User.findOne({chatId: chatId.toString()});
 		const isAdmin = user?.isAdmin;
 
 		let message = `<b>Comandos</b>
@@ -189,6 +210,8 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 			message += `\n\n<b>Admin:</b>\n<b>/users</b> - Gestionar usuarios`;
 		}
 
+		message += `\n\n<i>Dudas o sugerencias? Contacta a @pavegliobruno</i>`;
+
 		await this.sendMessage(chatId, message);
 	}
 
@@ -196,8 +219,8 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 		const USERS_PER_PAGE = 10;
 
 		// Filtro de estado
-		const statusFilter = filter === 'all' ? {} : { status: filter };
-		const query = { isAdmin: false, ...statusFilter };
+		const statusFilter = filter === 'all' ? {} : {status: filter};
+		const query = {isAdmin: false, ...statusFilter};
 
 		// Obtener usuarios con conteo de monitores
 		const users = await User.find(query).lean();
@@ -208,7 +231,7 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 				const monitorCount = await RouteMonitor.countDocuments({
 					'notifications.telegram.chatId': user.chatId,
 				});
-				return { ...user, monitorCount };
+				return {...user, monitorCount};
 			})
 		);
 
@@ -224,13 +247,16 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 		const totalPages = Math.ceil(usersWithMonitors.length / USERS_PER_PAGE);
 		const currentPage = Math.min(page, totalPages - 1);
 		const startIdx = currentPage * USERS_PER_PAGE;
-		const pageUsers = usersWithMonitors.slice(startIdx, startIdx + USERS_PER_PAGE);
+		const pageUsers = usersWithMonitors.slice(
+			startIdx,
+			startIdx + USERS_PER_PAGE
+		);
 
 		// Conteos por estado (del total, no filtrado)
-		const allUsers = await User.find({ isAdmin: false });
-		const activeCount = allUsers.filter(u => u.status === 'active').length;
-		const pendingCount = allUsers.filter(u => u.status === 'pending').length;
-		const blockedCount = allUsers.filter(u => u.status === 'blocked').length;
+		const allUsers = await User.find({isAdmin: false});
+		const activeCount = allUsers.filter((u) => u.status === 'active').length;
+		const pendingCount = allUsers.filter((u) => u.status === 'pending').length;
+		const blockedCount = allUsers.filter((u) => u.status === 'blocked').length;
 
 		// Construir mensaje
 		const filterLabel = {
@@ -262,20 +288,41 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 
 		// Botones de filtro
 		const filterButtons = [
-			{ text: filter === 'all' ? '• Todos' : 'Todos', callback_data: 'usersfilter_all_0' },
-			{ text: filter === 'active' ? '• Activos' : 'Activos', callback_data: 'usersfilter_active_0' },
-			{ text: filter === 'pending' ? '• Pend.' : 'Pend.', callback_data: 'usersfilter_pending_0' },
-			{ text: filter === 'blocked' ? '• Bloq.' : 'Bloq.', callback_data: 'usersfilter_blocked_0' },
+			{
+				text: filter === 'all' ? '• Todos' : 'Todos',
+				callback_data: 'usersfilter_all_0',
+			},
+			{
+				text: filter === 'active' ? '• Activos' : 'Activos',
+				callback_data: 'usersfilter_active_0',
+			},
+			{
+				text: filter === 'pending' ? '• Pend.' : 'Pend.',
+				callback_data: 'usersfilter_pending_0',
+			},
+			{
+				text: filter === 'blocked' ? '• Bloq.' : 'Bloq.',
+				callback_data: 'usersfilter_blocked_0',
+			},
 		];
 
 		// Botones de paginación
 		const navButtons = [];
 		if (currentPage > 0) {
-			navButtons.push({ text: '← Anterior', callback_data: `userspage_${filter}_${currentPage - 1}` });
+			navButtons.push({
+				text: '← Anterior',
+				callback_data: `userspage_${filter}_${currentPage - 1}`,
+			});
 		}
-		navButtons.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: 'noop' });
+		navButtons.push({
+			text: `${currentPage + 1}/${totalPages}`,
+			callback_data: 'noop',
+		});
 		if (currentPage < totalPages - 1) {
-			navButtons.push({ text: 'Siguiente →', callback_data: `userspage_${filter}_${currentPage + 1}` });
+			navButtons.push({
+				text: 'Siguiente →',
+				callback_data: `userspage_${filter}_${currentPage + 1}`,
+			});
 		}
 
 		// Botones para seleccionar usuario (números)
@@ -288,15 +335,11 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 			userSelectButtons.push(row);
 		}
 
-		const keyboard = [
-			filterButtons,
-			...userSelectButtons,
-			navButtons,
-		];
+		const keyboard = [filterButtons, ...userSelectButtons, navButtons];
 
 		await this.telegramService.bot.sendMessage(chatId, message, {
 			parse_mode: 'HTML',
-			reply_markup: { inline_keyboard: keyboard },
+			reply_markup: {inline_keyboard: keyboard},
 		});
 	}
 
@@ -304,11 +347,14 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 		try {
 			// Siempre mostrar solo los monitores del usuario actual
 			const monitors = await RouteMonitor.find({
-				'notifications.telegram.chatId': chatId.toString()
+				'notifications.telegram.chatId': chatId.toString(),
 			}).sort({createdAt: -1});
 
 			if (monitors.length === 0) {
-				await this.sendMessage(chatId, 'No hay monitores configurados.\n\nUsa /create para crear uno.');
+				await this.sendMessage(
+					chatId,
+					'No hay monitores configurados.\n\nUsa /create para crear uno.'
+				);
 				return;
 			}
 
@@ -321,7 +367,10 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 			const activeCount = monitors.filter((m) => m.isActive).length;
 			const pausedCount = monitors.length - activeCount;
 
-			await this.sendMessage(chatId, `${monitors.length} monitores (${activeCount} activos, ${pausedCount} pausados)`);
+			await this.sendMessage(
+				chatId,
+				`${monitors.length} monitores (${activeCount} activos, ${pausedCount} pausados)`
+			);
 		} catch (error) {
 			console.error('Error obteniendo monitores:', error);
 			await this.sendMessage(chatId, 'Error obteniendo la lista de monitores.');
@@ -337,8 +386,12 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 
 		const outbound = monitor.outboundDateRange;
 		const inbound = monitor.inboundDateRange;
-		const idaStr = outbound ? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}` : '-';
-		const vueltaStr = inbound ? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}` : '';
+		const idaStr = outbound
+			? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}`
+			: '-';
+		const vueltaStr = inbound
+			? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}`
+			: '';
 
 		let message = `<b>${monitor.name}</b>
 ${monitor.origin} → ${monitor.destination}
@@ -356,19 +409,19 @@ Ida: ${idaStr}`;
 
 		if (monitor.isActive) {
 			buttons.push([
-				{ text: 'Pausar', callback_data: `pause_${monitor._id}` },
-				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+				{text: 'Pausar', callback_data: `pause_${monitor._id}`},
+				{text: 'Buscar', callback_data: `check_${monitor._id}`},
 			]);
 		} else {
 			buttons.push([
-				{ text: 'Reanudar', callback_data: `resume_${monitor._id}` },
-				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+				{text: 'Reanudar', callback_data: `resume_${monitor._id}`},
+				{text: 'Buscar', callback_data: `check_${monitor._id}`},
 			]);
 		}
 
 		buttons.push([
-			{ text: 'Editar', callback_data: `edit_${monitor._id}` },
-			{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
+			{text: 'Editar', callback_data: `edit_${monitor._id}`},
+			{text: 'Eliminar', callback_data: `delete_${monitor._id}`},
 		]);
 
 		await this.telegramService.bot.sendMessage(chatId, message, {
@@ -465,9 +518,12 @@ Escribí el nombre de la ciudad o código IATA (ej: Berlin, Madrid, EZE)
 		const locations = await this.kiwiService.searchLocations(searchTerm);
 
 		if (locations.length === 0) {
-			await this.sendMessage(chatId, `❌ No se encontraron resultados para "<b>${searchTerm}</b>".
+			await this.sendMessage(
+				chatId,
+				`❌ No se encontraron resultados para "<b>${searchTerm}</b>".
 
-Intentá con otro nombre de ciudad o código IATA.`);
+Intentá con otro nombre de ciudad o código IATA.`
+			);
 			return;
 		}
 
@@ -475,15 +531,21 @@ Intentá con otro nombre de ciudad o código IATA.`);
 		if (locations.length === 1) {
 			const loc = locations[0];
 			state.data.origin = loc.id;
-			state.data.originCode = loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase() || searchTerm.toUpperCase();
+			state.data.originCode =
+				loc.code ||
+				loc.id.split(':')[1]?.split('_')[0]?.toUpperCase() ||
+				searchTerm.toUpperCase();
 			state.data.originName = loc.name;
 			state.step = 'destination';
 			this.conversationState.set(chatId, state);
 
-			await this.sendMessage(chatId, `✅ Origen: <b>${state.data.originName}</b> (${state.data.originCode})
+			await this.sendMessage(
+				chatId,
+				`✅ Origen: <b>${state.data.originName}</b> (${state.data.originCode})
 
 <b>Paso 2/6:</b> ¿Cuál es el <b>destino</b>?
-Escribí el nombre de la ciudad o código IATA.`);
+Escribí el nombre de la ciudad o código IATA.`
+			);
 			return;
 		}
 
@@ -496,18 +558,28 @@ Escribí el nombre de la ciudad o código IATA.`);
 		const keyboard = locations.map((loc, index) => {
 			const displayCode = loc.code || '';
 			const displayName = loc.name + (displayCode ? ` (${displayCode})` : '');
-			const locType = loc.type === 'city' ? 'Todos los aeropuertos' : loc.type === 'airport' ? 'Aeropuerto' : '';
-			return [{
-				text: `${displayName}${locType ? ' - ' + locType : ''}`,
-				callback_data: `origin_select_${index}`
-			}];
+			const locType =
+				loc.type === 'city'
+					? 'Todos los aeropuertos'
+					: loc.type === 'airport'
+						? 'Aeropuerto'
+						: '';
+			return [
+				{
+					text: `${displayName}${locType ? ' - ' + locType : ''}`,
+					callback_data: `origin_select_${index}`,
+				},
+			];
 		});
 
-		await this.telegramService.bot.sendMessage(chatId,
-			`Encontré ${locations.length} opciones para "<b>${searchTerm}</b>".\n\nSeleccioná el origen:`, {
-			parse_mode: 'HTML',
-			reply_markup: { inline_keyboard: keyboard }
-		});
+		await this.telegramService.bot.sendMessage(
+			chatId,
+			`Encontré ${locations.length} opciones para "<b>${searchTerm}</b>".\n\nSeleccioná el origen:`,
+			{
+				parse_mode: 'HTML',
+				reply_markup: {inline_keyboard: keyboard},
+			}
+		);
 	}
 
 	async handleDestinationStep(chatId, text, state) {
@@ -517,20 +589,29 @@ Escribí el nombre de la ciudad o código IATA.`);
 		const locations = await this.kiwiService.searchLocations(searchTerm);
 
 		if (locations.length === 0) {
-			await this.sendMessage(chatId, `❌ No se encontraron resultados para "<b>${searchTerm}</b>".
+			await this.sendMessage(
+				chatId,
+				`❌ No se encontraron resultados para "<b>${searchTerm}</b>".
 
-Intentá con otro nombre de ciudad o código IATA.`);
+Intentá con otro nombre de ciudad o código IATA.`
+			);
 			return;
 		}
 
 		// Si solo hay un resultado, usarlo directamente
 		if (locations.length === 1) {
 			const loc = locations[0];
-			const destCode = loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase() || searchTerm.toUpperCase();
+			const destCode =
+				loc.code ||
+				loc.id.split(':')[1]?.split('_')[0]?.toUpperCase() ||
+				searchTerm.toUpperCase();
 
 			// Verificar que no sea igual al origen
 			if (loc.id === state.data.origin) {
-				await this.sendMessage(chatId, '❌ El destino no puede ser igual al origen.');
+				await this.sendMessage(
+					chatId,
+					'❌ El destino no puede ser igual al origen.'
+				);
 				return;
 			}
 
@@ -540,14 +621,17 @@ Intentá con otro nombre de ciudad o código IATA.`);
 			state.step = 'outbound_dates';
 			this.conversationState.set(chatId, state);
 
-			await this.sendMessage(chatId, `✅ Destino: <b>${state.data.destinationName}</b> (${state.data.destinationCode})
+			await this.sendMessage(
+				chatId,
+				`✅ Destino: <b>${state.data.destinationName}</b> (${state.data.destinationCode})
 
 <b>Paso 3/6:</b> ¿Fechas de <b>ida</b>?
 Enviá el rango de fechas en formato:
 <code>YYYY-MM-DD YYYY-MM-DD</code>
 
 Ejemplo: <code>2026-05-01 2026-05-15</code>
-(o una sola fecha si es fija)`);
+(o una sola fecha si es fija)`
+			);
 			return;
 		}
 
@@ -560,18 +644,28 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		const keyboard = locations.map((loc, index) => {
 			const displayCode = loc.code || '';
 			const displayName = loc.name + (displayCode ? ` (${displayCode})` : '');
-			const locType = loc.type === 'city' ? 'Todos los aeropuertos' : loc.type === 'airport' ? 'Aeropuerto' : '';
-			return [{
-				text: `${displayName}${locType ? ' - ' + locType : ''}`,
-				callback_data: `dest_select_${index}`
-			}];
+			const locType =
+				loc.type === 'city'
+					? 'Todos los aeropuertos'
+					: loc.type === 'airport'
+						? 'Aeropuerto'
+						: '';
+			return [
+				{
+					text: `${displayName}${locType ? ' - ' + locType : ''}`,
+					callback_data: `dest_select_${index}`,
+				},
+			];
 		});
 
-		await this.telegramService.bot.sendMessage(chatId,
-			`Encontré ${locations.length} opciones para "<b>${searchTerm}</b>".\n\nSeleccioná el destino:`, {
-			parse_mode: 'HTML',
-			reply_markup: { inline_keyboard: keyboard }
-		});
+		await this.telegramService.bot.sendMessage(
+			chatId,
+			`Encontré ${locations.length} opciones para "<b>${searchTerm}</b>".\n\nSeleccioná el destino:`,
+			{
+				parse_mode: 'HTML',
+				reply_markup: {inline_keyboard: keyboard},
+			}
+		);
 	}
 
 	async handleOutboundDatesStep(chatId, text, state) {
@@ -579,7 +673,10 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 		if (!dateRegex.test(dates[0])) {
-			await this.sendMessage(chatId, '❌ Formato inválido. Usa YYYY-MM-DD (ej: 2026-05-01)');
+			await this.sendMessage(
+				chatId,
+				'❌ Formato inválido. Usa YYYY-MM-DD (ej: 2026-05-01)'
+			);
 			return;
 		}
 
@@ -594,14 +691,17 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		state.step = 'inbound_dates';
 		this.conversationState.set(chatId, state);
 
-		await this.sendMessage(chatId, `✅ Ida: <b>${startDate}</b> a <b>${endDate}</b>
+		await this.sendMessage(
+			chatId,
+			`✅ Ida: <b>${startDate}</b> a <b>${endDate}</b>
 
 <b>Paso 4/6:</b> ¿Fechas de <b>vuelta</b>?
 Enviá el rango de fechas en formato:
 <code>YYYY-MM-DD YYYY-MM-DD</code>
 
 Ejemplo: <code>2026-05-30 2026-06-10</code>
-(escribe "solo ida" si no hay vuelta)`);
+(escribe "solo ida" si no hay vuelta)`
+		);
 	}
 
 	async handleInboundDatesStep(chatId, text, state) {
@@ -615,12 +715,16 @@ Ejemplo: <code>2026-05-30 2026-06-10</code>
 			const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 			if (!dateRegex.test(dates[0])) {
-				await this.sendMessage(chatId, '❌ Formato inválido. Usa YYYY-MM-DD o escribe "solo ida"');
+				await this.sendMessage(
+					chatId,
+					'❌ Formato inválido. Usa YYYY-MM-DD o escribe "solo ida"'
+				);
 				return;
 			}
 
 			const startDate = dates[0];
-			const endDate = dates[1] && dateRegex.test(dates[1]) ? dates[1] : dates[0];
+			const endDate =
+				dates[1] && dateRegex.test(dates[1]) ? dates[1] : dates[0];
 
 			state.data.flightType = 'roundtrip';
 			state.data.inboundDateRange = {
@@ -633,23 +737,30 @@ Ejemplo: <code>2026-05-30 2026-06-10</code>
 		state.step = 'price';
 		this.conversationState.set(chatId, state);
 
-		const vueltaMsg = state.data.flightType === 'oneway'
-			? '✅ Tipo: <b>Solo ida</b>'
-			: `✅ Vuelta: <b>${state.data.inboundDateRange.startDate}</b> a <b>${state.data.inboundDateRange.endDate}</b>`;
+		const vueltaMsg =
+			state.data.flightType === 'oneway'
+				? '✅ Tipo: <b>Solo ida</b>'
+				: `✅ Vuelta: <b>${state.data.inboundDateRange.startDate}</b> a <b>${state.data.inboundDateRange.endDate}</b>`;
 
-		await this.sendMessage(chatId, `${vueltaMsg}
+		await this.sendMessage(
+			chatId,
+			`${vueltaMsg}
 
 <b>Paso 5/6:</b> ¿Precio <b>umbral</b> en EUR?
 Recibirás alertas cuando el precio sea menor a este valor.
 
-Ejemplo: <code>800</code>`);
+Ejemplo: <code>800</code>`
+		);
 	}
 
 	async handlePriceStep(chatId, text, state) {
 		const price = parseInt(text.trim());
 
 		if (isNaN(price) || price <= 0 || price > 10000) {
-			await this.sendMessage(chatId, '❌ Precio inválido. Debe ser un número entre 1 y 10000.');
+			await this.sendMessage(
+				chatId,
+				'❌ Precio inválido. Debe ser un número entre 1 y 10000.'
+			);
 			return;
 		}
 
@@ -657,13 +768,16 @@ Ejemplo: <code>800</code>`);
 		state.step = 'max_stops';
 		this.conversationState.set(chatId, state);
 
-		await this.sendMessage(chatId, `✅ Umbral: <b>€${price}</b>
+		await this.sendMessage(
+			chatId,
+			`✅ Umbral: <b>€${price}</b>
 
 <b>Paso 6/6:</b> ¿Máximo de <b>escalas</b>?
 Enviá un número (0 = solo directos, 1, 2, etc.)
 
 Ejemplo: <code>2</code>
-(escribe "cualquiera" para no limitar)`);
+(escribe "cualquiera" para no limitar)`
+		);
 	}
 
 	async handleMaxStopsStep(chatId, text, state) {
@@ -674,7 +788,10 @@ Ejemplo: <code>2</code>
 		} else {
 			const maxStops = parseInt(input);
 			if (isNaN(maxStops) || maxStops < 0 || maxStops > 5) {
-				await this.sendMessage(chatId, '❌ Valor inválido. Debe ser 0-5 o "cualquiera".');
+				await this.sendMessage(
+					chatId,
+					'❌ Valor inválido. Debe ser 0-5 o "cualquiera".'
+				);
 				return;
 			}
 			state.data.maxStops = maxStops;
@@ -683,8 +800,10 @@ Ejemplo: <code>2</code>
 		state.step = 'confirm';
 		this.conversationState.set(chatId, state);
 
-		const stopsMsg = state.data.maxStops === null ? 'Sin límite' : state.data.maxStops;
-		const flightTypeMsg = state.data.flightType === 'oneway' ? 'Solo ida' : 'Ida y vuelta';
+		const stopsMsg =
+			state.data.maxStops === null ? 'Sin límite' : state.data.maxStops;
+		const flightTypeMsg =
+			state.data.flightType === 'oneway' ? 'Solo ida' : 'Ida y vuelta';
 
 		const originDisplay = `${state.data.originName} (${state.data.originCode})`;
 		const destDisplay = `${state.data.destinationName} (${state.data.destinationCode})`;
@@ -732,21 +851,32 @@ ${state.data.flightType === 'roundtrip' ? `📅 <b>Vuelta:</b> ${state.data.inbo
 
 				this.conversationState.delete(chatId);
 
-				await this.sendMessage(chatId, `✅ <b>Monitor creado</b>
+				await this.sendMessage(
+					chatId,
+					`✅ <b>Monitor creado</b>
 
 ${state.data.originName} (${state.data.originCode}) → ${state.data.destinationName} (${state.data.destinationCode}) · Umbral €${monitor.priceThreshold}
 
-Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por debajo de tu umbral.`);
+Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por debajo de tu umbral.`
+				);
 
-				console.log(`✅ Monitor creado desde Telegram: ${monitor.name} (${monitor._id})`);
+				console.log(
+					`✅ Monitor creado desde Telegram: ${monitor.name} (${monitor._id})`
+				);
 			} catch (error) {
 				console.error('❌ Error creando monitor:', error);
-				await this.sendMessage(chatId, '❌ Error creando el monitor. Intenta nuevamente con /create');
+				await this.sendMessage(
+					chatId,
+					'❌ Error creando el monitor. Intenta nuevamente con /create'
+				);
 				this.conversationState.delete(chatId);
 			}
 		} else if (input === 'no' || input === 'n') {
 			this.conversationState.delete(chatId);
-			await this.sendMessage(chatId, '❌ Creación cancelada. Usa /create para empezar de nuevo.');
+			await this.sendMessage(
+				chatId,
+				'❌ Creación cancelada. Usa /create para empezar de nuevo.'
+			);
 		} else {
 			await this.sendMessage(chatId, '❌ Responde <b>si</b> o <b>no</b>');
 		}
@@ -765,22 +895,45 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 			// Callbacks con formato especial (usersfilter_status_page, userspage_filter_page)
 			if (data.startsWith('usersfilter_')) {
 				const [, filter, page] = data.split('_');
-				await this.handleUsersFilterCallback(chatId, messageId, filter, parseInt(page), callbackQuery.id);
+				await this.handleUsersFilterCallback(
+					chatId,
+					messageId,
+					filter,
+					parseInt(page),
+					callbackQuery.id
+				);
 				return;
 			}
 			if (data.startsWith('userspage_')) {
 				const [, filter, page] = data.split('_');
-				await this.handleUsersFilterCallback(chatId, messageId, filter, parseInt(page), callbackQuery.id);
+				await this.handleUsersFilterCallback(
+					chatId,
+					messageId,
+					filter,
+					parseInt(page),
+					callbackQuery.id
+				);
 				return;
 			}
 			if (data.startsWith('userselect_')) {
 				const userChatId = data.replace('userselect_', '');
-				await this.handleUserSelectCallback(chatId, messageId, userChatId, callbackQuery.id);
+				await this.handleUserSelectCallback(
+					chatId,
+					messageId,
+					userChatId,
+					callbackQuery.id
+				);
 				return;
 			}
 			if (data.startsWith('userback_')) {
 				const [, filter, page] = data.split('_');
-				await this.handleUsersFilterCallback(chatId, messageId, filter, parseInt(page), callbackQuery.id);
+				await this.handleUsersFilterCallback(
+					chatId,
+					messageId,
+					filter,
+					parseInt(page),
+					callbackQuery.id
+				);
 				return;
 			}
 			if (data === 'noop') {
@@ -804,55 +957,135 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 
 			switch (action) {
 				case 'pause':
-					await this.handlePauseCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handlePauseCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'resume':
-					await this.handleResumeCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleResumeCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'delete':
-					await this.handleDeleteCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleDeleteCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'confirmdelete':
-					await this.handleConfirmDeleteCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleConfirmDeleteCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'canceldelete':
-					await this.handleCancelDeleteCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleCancelDeleteCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'check':
-					await this.handleCheckCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleCheckCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'approve':
-					await this.handleApproveUserCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleApproveUserCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'reject':
-					await this.handleRejectUserCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleRejectUserCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'blockuser':
-					await this.handleBlockUserCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleBlockUserCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'unblockuser':
-					await this.handleUnblockUserCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleUnblockUserCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'usermonitors':
 					await this.handleUserMonitorsCallback(chatId, id, callbackQuery.id);
 					break;
 				case 'edit':
-					await this.handleEditCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleEditCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				case 'editprice':
-					await this.handleEditFieldCallback(chatId, id, 'price', callbackQuery.id);
+					await this.handleEditFieldCallback(
+						chatId,
+						id,
+						'price',
+						callbackQuery.id
+					);
 					break;
 				case 'editstops':
-					await this.handleEditFieldCallback(chatId, id, 'stops', callbackQuery.id);
+					await this.handleEditFieldCallback(
+						chatId,
+						id,
+						'stops',
+						callbackQuery.id
+					);
 					break;
 				case 'editoutbound':
-					await this.handleEditFieldCallback(chatId, id, 'outbound', callbackQuery.id);
+					await this.handleEditFieldCallback(
+						chatId,
+						id,
+						'outbound',
+						callbackQuery.id
+					);
 					break;
 				case 'editinbound':
-					await this.handleEditFieldCallback(chatId, id, 'inbound', callbackQuery.id);
+					await this.handleEditFieldCallback(
+						chatId,
+						id,
+						'inbound',
+						callbackQuery.id
+					);
 					break;
 				case 'editback':
-					await this.handleEditBackCallback(chatId, messageId, id, callbackQuery.id);
+					await this.handleEditBackCallback(
+						chatId,
+						messageId,
+						id,
+						callbackQuery.id
+					);
 					break;
 				default:
 					await this.telegramService.bot.answerCallbackQuery(callbackQuery.id, {
@@ -870,7 +1103,11 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 	async handleOriginSelectCallback(chatId, index, callbackId) {
 		const state = this.conversationState.get(chatId.toString());
 
-		if (!state || state.step !== 'origin_select' || !state.data.pendingLocations) {
+		if (
+			!state ||
+			state.step !== 'origin_select' ||
+			!state.data.pendingLocations
+		) {
 			await this.telegramService.bot.answerCallbackQuery(callbackId, {
 				text: 'Sesión expirada. Usa /create para empezar de nuevo.',
 			});
@@ -887,7 +1124,8 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 
 		// Guardar origen seleccionado
 		state.data.origin = loc.id;
-		state.data.originCode = loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase();
+		state.data.originCode =
+			loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase();
 		state.data.originName = loc.name;
 		delete state.data.pendingLocations;
 		state.step = 'destination';
@@ -895,16 +1133,23 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 
 		await this.telegramService.bot.answerCallbackQuery(callbackId);
 
-		await this.sendMessage(chatId, `✅ Origen: <b>${state.data.originName}</b> (${state.data.originCode})
+		await this.sendMessage(
+			chatId,
+			`✅ Origen: <b>${state.data.originName}</b> (${state.data.originCode})
 
 <b>Paso 2/6:</b> ¿Cuál es el <b>destino</b>?
-Escribí el nombre de la ciudad o código IATA.`);
+Escribí el nombre de la ciudad o código IATA.`
+		);
 	}
 
 	async handleDestSelectCallback(chatId, index, callbackId) {
 		const state = this.conversationState.get(chatId.toString());
 
-		if (!state || state.step !== 'destination_select' || !state.data.pendingLocations) {
+		if (
+			!state ||
+			state.step !== 'destination_select' ||
+			!state.data.pendingLocations
+		) {
 			await this.telegramService.bot.answerCallbackQuery(callbackId, {
 				text: 'Sesión expirada. Usa /create para empezar de nuevo.',
 			});
@@ -929,7 +1174,8 @@ Escribí el nombre de la ciudad o código IATA.`);
 
 		// Guardar destino seleccionado
 		state.data.destination = loc.id;
-		state.data.destinationCode = loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase();
+		state.data.destinationCode =
+			loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase();
 		state.data.destinationName = loc.name;
 		delete state.data.pendingLocations;
 		state.step = 'outbound_dates';
@@ -937,18 +1183,21 @@ Escribí el nombre de la ciudad o código IATA.`);
 
 		await this.telegramService.bot.answerCallbackQuery(callbackId);
 
-		await this.sendMessage(chatId, `✅ Destino: <b>${state.data.destinationName}</b> (${state.data.destinationCode})
+		await this.sendMessage(
+			chatId,
+			`✅ Destino: <b>${state.data.destinationName}</b> (${state.data.destinationCode})
 
 <b>Paso 3/6:</b> ¿Fechas de <b>ida</b>?
 Enviá el rango de fechas en formato:
 <code>YYYY-MM-DD YYYY-MM-DD</code>
 
 Ejemplo: <code>2026-05-01 2026-05-15</code>
-(o una sola fecha si es fija)`);
+(o una sola fecha si es fija)`
+		);
 	}
 
 	async handleApproveUserCallback(chatId, messageId, userChatId, callbackId) {
-		const user = await User.findOne({ chatId: userChatId });
+		const user = await User.findOne({chatId: userChatId});
 		if (!user) {
 			await this.telegramService.bot.answerCallbackQuery(callbackId, {
 				text: 'Usuario no encontrado',
@@ -974,7 +1223,14 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		// Notificar al usuario
 		await this.telegramService.bot.sendMessage(
 			userChatId,
-			'Tu cuenta fue aprobada. Ya podés usar el bot.\n\nUsa /help para ver los comandos disponibles.'
+			`<b>Cuenta aprobada</b>
+
+Tu cuenta fue aprobada. Ya podés usar el bot.
+
+Usa /help para ver los comandos disponibles.
+
+<i>Dudas o sugerencias? Contacta a @pavegliobruno</i>`,
+			{parse_mode: 'HTML'}
 		);
 
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
@@ -985,7 +1241,7 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 	}
 
 	async handleRejectUserCallback(chatId, messageId, userChatId, callbackId) {
-		const user = await User.findOne({ chatId: userChatId });
+		const user = await User.findOne({chatId: userChatId});
 		if (!user) {
 			await this.telegramService.bot.answerCallbackQuery(callbackId, {
 				text: 'Usuario no encontrado',
@@ -1016,7 +1272,7 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 	}
 
 	async handleBlockUserCallback(chatId, messageId, userChatId, callbackId) {
-		const user = await User.findOne({ chatId: userChatId });
+		const user = await User.findOne({chatId: userChatId});
 		if (!user) {
 			await this.telegramService.bot.answerCallbackQuery(callbackId, {
 				text: 'Usuario no encontrado',
@@ -1036,7 +1292,7 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 	}
 
 	async handleUnblockUserCallback(chatId, messageId, userChatId, callbackId) {
-		const user = await User.findOne({ chatId: userChatId });
+		const user = await User.findOne({chatId: userChatId});
 		if (!user) {
 			await this.telegramService.bot.answerCallbackQuery(callbackId, {
 				text: 'Usuario no encontrado',
@@ -1080,29 +1336,27 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 
 		if (user.status === 'active') {
 			buttons.push([
-				{ text: 'Ver monitores', callback_data: `usermonitors_${user.chatId}` },
-				{ text: 'Bloquear', callback_data: `blockuser_${user.chatId}` },
+				{text: 'Ver monitores', callback_data: `usermonitors_${user.chatId}`},
+				{text: 'Bloquear', callback_data: `blockuser_${user.chatId}`},
 			]);
 		} else if (user.status === 'blocked') {
 			buttons.push([
-				{ text: 'Desbloquear', callback_data: `unblockuser_${user.chatId}` },
+				{text: 'Desbloquear', callback_data: `unblockuser_${user.chatId}`},
 			]);
 		} else if (user.status === 'pending') {
 			buttons.push([
-				{ text: 'Aprobar', callback_data: `approve_${user.chatId}` },
-				{ text: 'Rechazar', callback_data: `reject_${user.chatId}` },
+				{text: 'Aprobar', callback_data: `approve_${user.chatId}`},
+				{text: 'Rechazar', callback_data: `reject_${user.chatId}`},
 			]);
 		}
 
-		buttons.push([
-			{ text: '← Volver a lista', callback_data: `userback_all_0` },
-		]);
+		buttons.push([{text: '← Volver a lista', callback_data: `userback_all_0`}]);
 
 		await this.telegramService.bot.editMessageText(message, {
 			chat_id: chatId,
 			message_id: messageId,
 			parse_mode: 'HTML',
-			reply_markup: { inline_keyboard: buttons },
+			reply_markup: {inline_keyboard: buttons},
 		});
 	}
 
@@ -1112,8 +1366,8 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		const USERS_PER_PAGE = 10;
 
 		// Filtro de estado
-		const statusFilter = filter === 'all' ? {} : { status: filter };
-		const query = { isAdmin: false, ...statusFilter };
+		const statusFilter = filter === 'all' ? {} : {status: filter};
+		const query = {isAdmin: false, ...statusFilter};
 
 		// Obtener usuarios con conteo de monitores
 		const users = await User.find(query).lean();
@@ -1123,7 +1377,7 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 				const monitorCount = await RouteMonitor.countDocuments({
 					'notifications.telegram.chatId': user.chatId,
 				});
-				return { ...user, monitorCount };
+				return {...user, monitorCount};
 			})
 		);
 
@@ -1131,10 +1385,13 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		usersWithMonitors.sort((a, b) => b.monitorCount - a.monitorCount);
 
 		if (usersWithMonitors.length === 0) {
-			await this.telegramService.bot.editMessageText('No hay usuarios con ese filtro.', {
-				chat_id: chatId,
-				message_id: messageId,
-			});
+			await this.telegramService.bot.editMessageText(
+				'No hay usuarios con ese filtro.',
+				{
+					chat_id: chatId,
+					message_id: messageId,
+				}
+			);
 			return;
 		}
 
@@ -1142,13 +1399,16 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		const totalPages = Math.ceil(usersWithMonitors.length / USERS_PER_PAGE);
 		const currentPage = Math.min(page, totalPages - 1);
 		const startIdx = currentPage * USERS_PER_PAGE;
-		const pageUsers = usersWithMonitors.slice(startIdx, startIdx + USERS_PER_PAGE);
+		const pageUsers = usersWithMonitors.slice(
+			startIdx,
+			startIdx + USERS_PER_PAGE
+		);
 
 		// Conteos por estado
-		const allUsers = await User.find({ isAdmin: false });
-		const activeCount = allUsers.filter(u => u.status === 'active').length;
-		const pendingCount = allUsers.filter(u => u.status === 'pending').length;
-		const blockedCount = allUsers.filter(u => u.status === 'blocked').length;
+		const allUsers = await User.find({isAdmin: false});
+		const activeCount = allUsers.filter((u) => u.status === 'active').length;
+		const pendingCount = allUsers.filter((u) => u.status === 'pending').length;
+		const blockedCount = allUsers.filter((u) => u.status === 'blocked').length;
 
 		const filterLabel = {
 			all: 'Todos',
@@ -1179,20 +1439,41 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 
 		// Botones de filtro
 		const filterButtons = [
-			{ text: filter === 'all' ? '• Todos' : 'Todos', callback_data: 'usersfilter_all_0' },
-			{ text: filter === 'active' ? '• Activos' : 'Activos', callback_data: 'usersfilter_active_0' },
-			{ text: filter === 'pending' ? '• Pend.' : 'Pend.', callback_data: 'usersfilter_pending_0' },
-			{ text: filter === 'blocked' ? '• Bloq.' : 'Bloq.', callback_data: 'usersfilter_blocked_0' },
+			{
+				text: filter === 'all' ? '• Todos' : 'Todos',
+				callback_data: 'usersfilter_all_0',
+			},
+			{
+				text: filter === 'active' ? '• Activos' : 'Activos',
+				callback_data: 'usersfilter_active_0',
+			},
+			{
+				text: filter === 'pending' ? '• Pend.' : 'Pend.',
+				callback_data: 'usersfilter_pending_0',
+			},
+			{
+				text: filter === 'blocked' ? '• Bloq.' : 'Bloq.',
+				callback_data: 'usersfilter_blocked_0',
+			},
 		];
 
 		// Botones de paginación
 		const navButtons = [];
 		if (currentPage > 0) {
-			navButtons.push({ text: '← Anterior', callback_data: `userspage_${filter}_${currentPage - 1}` });
+			navButtons.push({
+				text: '← Anterior',
+				callback_data: `userspage_${filter}_${currentPage - 1}`,
+			});
 		}
-		navButtons.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: 'noop' });
+		navButtons.push({
+			text: `${currentPage + 1}/${totalPages}`,
+			callback_data: 'noop',
+		});
 		if (currentPage < totalPages - 1) {
-			navButtons.push({ text: 'Siguiente →', callback_data: `userspage_${filter}_${currentPage + 1}` });
+			navButtons.push({
+				text: 'Siguiente →',
+				callback_data: `userspage_${filter}_${currentPage + 1}`,
+			});
 		}
 
 		// Botones para seleccionar usuario
@@ -1205,17 +1486,13 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 			userSelectButtons.push(row);
 		}
 
-		const keyboard = [
-			filterButtons,
-			...userSelectButtons,
-			navButtons,
-		];
+		const keyboard = [filterButtons, ...userSelectButtons, navButtons];
 
 		await this.telegramService.bot.editMessageText(message, {
 			chat_id: chatId,
 			message_id: messageId,
 			parse_mode: 'HTML',
-			reply_markup: { inline_keyboard: keyboard },
+			reply_markup: {inline_keyboard: keyboard},
 		});
 	}
 
@@ -1226,7 +1503,7 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		const filter = parts[1] || 'all';
 		const page = parseInt(parts[2]) || 0;
 
-		const user = await User.findOne({ chatId: actualChatId });
+		const user = await User.findOne({chatId: actualChatId});
 		if (!user) {
 			await this.telegramService.bot.answerCallbackQuery(callbackId, {
 				text: 'Usuario no encontrado',
@@ -1261,34 +1538,34 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		// Acciones según estado
 		if (user.status === 'active') {
 			buttons.push([
-				{ text: 'Ver monitores', callback_data: `usermonitors_${actualChatId}` },
-				{ text: 'Bloquear', callback_data: `blockuser_${actualChatId}` },
+				{text: 'Ver monitores', callback_data: `usermonitors_${actualChatId}`},
+				{text: 'Bloquear', callback_data: `blockuser_${actualChatId}`},
 			]);
 		} else if (user.status === 'blocked') {
 			buttons.push([
-				{ text: 'Desbloquear', callback_data: `unblockuser_${actualChatId}` },
+				{text: 'Desbloquear', callback_data: `unblockuser_${actualChatId}`},
 			]);
 		} else if (user.status === 'pending') {
 			buttons.push([
-				{ text: 'Aprobar', callback_data: `approve_${actualChatId}` },
-				{ text: 'Rechazar', callback_data: `reject_${actualChatId}` },
+				{text: 'Aprobar', callback_data: `approve_${actualChatId}`},
+				{text: 'Rechazar', callback_data: `reject_${actualChatId}`},
 			]);
 		}
 
 		buttons.push([
-			{ text: '← Volver a lista', callback_data: `userback_${filter}_${page}` },
+			{text: '← Volver a lista', callback_data: `userback_${filter}_${page}`},
 		]);
 
 		await this.telegramService.bot.editMessageText(message, {
 			chat_id: chatId,
 			message_id: messageId,
 			parse_mode: 'HTML',
-			reply_markup: { inline_keyboard: buttons },
+			reply_markup: {inline_keyboard: buttons},
 		});
 	}
 
 	async handleUserMonitorsCallback(chatId, userChatId, callbackId) {
-		const user = await User.findOne({ chatId: userChatId });
+		const user = await User.findOne({chatId: userChatId});
 		if (!user) {
 			await this.telegramService.bot.answerCallbackQuery(callbackId, {
 				text: 'Usuario no encontrado',
@@ -1300,11 +1577,14 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 
 		const displayName = user.firstName || user.username || user.chatId;
 		const monitors = await RouteMonitor.find({
-			'notifications.telegram.chatId': userChatId
-		}).sort({ createdAt: -1 });
+			'notifications.telegram.chatId': userChatId,
+		}).sort({createdAt: -1});
 
 		if (monitors.length === 0) {
-			await this.sendMessage(chatId, `<b>${displayName}</b> no tiene monitores.`);
+			await this.sendMessage(
+				chatId,
+				`<b>${displayName}</b> no tiene monitores.`
+			);
 			return;
 		}
 
@@ -1326,7 +1606,8 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 
 		const outbound = monitor.outboundDateRange;
 		const inbound = monitor.inboundDateRange;
-		const stopsText = monitor.maxStops === null ? 'Sin límite' : monitor.maxStops;
+		const stopsText =
+			monitor.maxStops === null ? 'Sin límite' : monitor.maxStops;
 
 		const message = `<b>Editar: ${monitor.name}</b>
 
@@ -1339,19 +1620,20 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 
 		const buttons = [
 			[
-				{ text: 'Precio', callback_data: `editprice_${monitorId}` },
-				{ text: 'Escalas', callback_data: `editstops_${monitorId}` },
+				{text: 'Precio', callback_data: `editprice_${monitorId}`},
+				{text: 'Escalas', callback_data: `editstops_${monitorId}`},
 			],
-			[
-				{ text: 'Fechas ida', callback_data: `editoutbound_${monitorId}` },
-			],
+			[{text: 'Fechas ida', callback_data: `editoutbound_${monitorId}`}],
 		];
 
 		if (monitor.flightType === 'roundtrip') {
-			buttons[1].push({ text: 'Fechas vuelta', callback_data: `editinbound_${monitorId}` });
+			buttons[1].push({
+				text: 'Fechas vuelta',
+				callback_data: `editinbound_${monitorId}`,
+			});
 		}
 
-		buttons.push([{ text: '← Volver', callback_data: `editback_${monitorId}` }]);
+		buttons.push([{text: '← Volver', callback_data: `editback_${monitorId}`}]);
 
 		await this.telegramService.bot.editMessageText(message, {
 			chat_id: chatId,
@@ -1379,7 +1661,7 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		// Guardar estado de edición
 		this.conversationState.set(chatId.toString(), {
 			step: `edit_${field}`,
-			data: { monitorId },
+			data: {monitorId},
 		});
 
 		const prompts = {
@@ -1396,7 +1678,10 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		const price = parseInt(text.trim());
 
 		if (isNaN(price) || price <= 0 || price > 10000) {
-			await this.sendMessage(chatId, 'Precio inválido. Debe ser un número entre 1 y 10000.');
+			await this.sendMessage(
+				chatId,
+				'Precio inválido. Debe ser un número entre 1 y 10000.'
+			);
 			return;
 		}
 
@@ -1423,7 +1708,10 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		} else {
 			maxStops = parseInt(input);
 			if (isNaN(maxStops) || maxStops < 0 || maxStops > 5) {
-				await this.sendMessage(chatId, 'Valor inválido. Debe ser 0-5 o "cualquiera".');
+				await this.sendMessage(
+					chatId,
+					'Valor inválido. Debe ser 0-5 o "cualquiera".'
+				);
 				return;
 			}
 		}
@@ -1439,7 +1727,10 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		await monitor.save();
 
 		this.conversationState.delete(chatId);
-		await this.sendMessage(chatId, `Escalas máximas actualizado a ${maxStops === null ? 'sin límite' : maxStops}`);
+		await this.sendMessage(
+			chatId,
+			`Escalas máximas actualizado a ${maxStops === null ? 'sin límite' : maxStops}`
+		);
 	}
 
 	async handleEditOutboundStep(chatId, text, state) {
@@ -1447,7 +1738,10 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 		if (!dateRegex.test(dates[0])) {
-			await this.sendMessage(chatId, 'Formato inválido. Usa YYYY-MM-DD (ej: 2026-05-01)');
+			await this.sendMessage(
+				chatId,
+				'Formato inválido. Usa YYYY-MM-DD (ej: 2026-05-01)'
+			);
 			return;
 		}
 
@@ -1469,7 +1763,10 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		await monitor.save();
 
 		this.conversationState.delete(chatId);
-		await this.sendMessage(chatId, `Fechas de ida actualizadas: ${this.formatShortDate(startDate)} - ${this.formatShortDate(endDate)}`);
+		await this.sendMessage(
+			chatId,
+			`Fechas de ida actualizadas: ${this.formatShortDate(startDate)} - ${this.formatShortDate(endDate)}`
+		);
 	}
 
 	async handleEditInboundStep(chatId, text, state) {
@@ -1477,7 +1774,10 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 		if (!dateRegex.test(dates[0])) {
-			await this.sendMessage(chatId, 'Formato inválido. Usa YYYY-MM-DD (ej: 2026-05-30)');
+			await this.sendMessage(
+				chatId,
+				'Formato inválido. Usa YYYY-MM-DD (ej: 2026-05-30)'
+			);
 			return;
 		}
 
@@ -1499,7 +1799,10 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		await monitor.save();
 
 		this.conversationState.delete(chatId);
-		await this.sendMessage(chatId, `Fechas de vuelta actualizadas: ${this.formatShortDate(startDate)} - ${this.formatShortDate(endDate)}`);
+		await this.sendMessage(
+			chatId,
+			`Fechas de vuelta actualizadas: ${this.formatShortDate(startDate)} - ${this.formatShortDate(endDate)}`
+		);
 	}
 
 	async handleEditBackCallback(chatId, messageId, monitorId, callbackId) {
@@ -1520,8 +1823,12 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 
 		const outbound = monitor.outboundDateRange;
 		const inbound = monitor.inboundDateRange;
-		const idaStr = outbound ? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}` : '-';
-		const vueltaStr = inbound ? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}` : '';
+		const idaStr = outbound
+			? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}`
+			: '-';
+		const vueltaStr = inbound
+			? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}`
+			: '';
 
 		let message = `<b>${monitor.name}</b>
 ${monitor.origin} → ${monitor.destination}
@@ -1538,19 +1845,19 @@ Ida: ${idaStr}`;
 
 		if (monitor.isActive) {
 			buttons.push([
-				{ text: 'Pausar', callback_data: `pause_${monitor._id}` },
-				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+				{text: 'Pausar', callback_data: `pause_${monitor._id}`},
+				{text: 'Buscar', callback_data: `check_${monitor._id}`},
 			]);
 		} else {
 			buttons.push([
-				{ text: 'Reanudar', callback_data: `resume_${monitor._id}` },
-				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+				{text: 'Reanudar', callback_data: `resume_${monitor._id}`},
+				{text: 'Buscar', callback_data: `check_${monitor._id}`},
 			]);
 		}
 
 		buttons.push([
-			{ text: 'Editar', callback_data: `edit_${monitor._id}` },
-			{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
+			{text: 'Editar', callback_data: `edit_${monitor._id}`},
+			{text: 'Eliminar', callback_data: `delete_${monitor._id}`},
 		]);
 
 		await this.telegramService.bot.editMessageText(message, {
@@ -1631,8 +1938,8 @@ ${monitor.origin} → ${monitor.destination}`;
 			reply_markup: {
 				inline_keyboard: [
 					[
-						{ text: 'Sí, eliminar', callback_data: `confirmdelete_${monitorId}` },
-						{ text: 'Cancelar', callback_data: `canceldelete_${monitorId}` },
+						{text: 'Sí, eliminar', callback_data: `confirmdelete_${monitorId}`},
+						{text: 'Cancelar', callback_data: `canceldelete_${monitorId}`},
 					],
 				],
 			},
@@ -1703,15 +2010,17 @@ ${monitor.origin} → ${monitor.destination}`;
 
 		try {
 			await monitoringService.checkRoute(monitor);
-			await this.telegramService.bot.sendMessage(chatId,
+			await this.telegramService.bot.sendMessage(
+				chatId,
 				`Búsqueda completada: <b>${monitor.name}</b>`,
-				{ parse_mode: 'HTML' }
+				{parse_mode: 'HTML'}
 			);
 		} catch (error) {
 			console.error('Error en búsqueda manual:', error);
-			await this.telegramService.bot.sendMessage(chatId,
+			await this.telegramService.bot.sendMessage(
+				chatId,
 				`Error buscando vuelos para ${monitor.name}`,
-				{ parse_mode: 'HTML' }
+				{parse_mode: 'HTML'}
 			);
 		}
 
@@ -1727,8 +2036,12 @@ ${monitor.origin} → ${monitor.destination}`;
 
 		const outbound = monitor.outboundDateRange;
 		const inbound = monitor.inboundDateRange;
-		const idaStr = outbound ? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}` : '-';
-		const vueltaStr = inbound ? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}` : '';
+		const idaStr = outbound
+			? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}`
+			: '-';
+		const vueltaStr = inbound
+			? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}`
+			: '';
 
 		let message = `<b>${monitor.name}</b>
 ${monitor.origin} → ${monitor.destination}
@@ -1745,15 +2058,15 @@ Ida: ${idaStr}`;
 
 		if (monitor.isActive) {
 			buttons.push([
-				{ text: 'Pausar', callback_data: `pause_${monitor._id}` },
-				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
-				{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
+				{text: 'Pausar', callback_data: `pause_${monitor._id}`},
+				{text: 'Buscar', callback_data: `check_${monitor._id}`},
+				{text: 'Eliminar', callback_data: `delete_${monitor._id}`},
 			]);
 		} else {
 			buttons.push([
-				{ text: 'Reanudar', callback_data: `resume_${monitor._id}` },
-				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
-				{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
+				{text: 'Reanudar', callback_data: `resume_${monitor._id}`},
+				{text: 'Buscar', callback_data: `check_${monitor._id}`},
+				{text: 'Eliminar', callback_data: `delete_${monitor._id}`},
 			]);
 		}
 
