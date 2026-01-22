@@ -1,5 +1,6 @@
 // src/services/telegramCommands.service.js
 const RouteMonitor = require('../models/routeMonitor.models');
+const User = require('../models/user.model');
 
 class TelegramCommandsService {
 	constructor(telegramService) {
@@ -10,7 +11,10 @@ class TelegramCommandsService {
 			'/monitors': this.handleListMonitors.bind(this),
 			'/create': this.handleCreate.bind(this),
 			'/cancel': this.handleCancel.bind(this),
+			'/users': this.handleUsers.bind(this),
 		};
+
+		this.adminChatId = process.env.TELEGRAM_CHAT_ID;
 		// Estado de conversación para cada chat
 		this.conversationState = new Map();
 
@@ -93,12 +97,32 @@ class TelegramCommandsService {
 	}
 
 	async handleCommand(msg, match) {
-		const chatId = msg.chat.id;
+		const chatId = msg.chat.id.toString();
 		const commandWithoutSlash = match[1];
 		const command = `/${commandWithoutSlash}`;
 		const args = msg.text.split(' ').slice(1);
 
 		try {
+			// Verificar/crear usuario
+			const user = await this.getOrCreateUser(msg);
+
+			// Si el usuario está pendiente o bloqueado, mostrar mensaje apropiado
+			if (user.status === 'pending') {
+				await this.sendMessage(chatId, 'Tu solicitud está pendiente de aprobación.');
+				return;
+			}
+
+			if (user.status === 'blocked') {
+				await this.sendMessage(chatId, 'No tenés acceso a este bot.');
+				return;
+			}
+
+			// Comando /users solo para admin
+			if (command === '/users' && !user.isAdmin) {
+				await this.sendMessage(chatId, 'No tenés permisos para este comando.');
+				return;
+			}
+
 			// Si hay conversación activa y el usuario envía /cancel, cancelar
 			if (command === '/cancel') {
 				await this.handleCancel(chatId);
@@ -114,21 +138,87 @@ class TelegramCommandsService {
 			} else {
 				await this.sendMessage(
 					chatId,
-					'❌ Comando no reconocido. Usa /help para ver comandos disponibles.'
+					'Comando no reconocido. Usa /help para ver comandos disponibles.'
 				);
 			}
 		} catch (error) {
-			console.error(`❌ Error procesando comando ${command}:`, error);
+			console.error(`Error procesando comando ${command}:`, error);
 			await this.sendMessage(
 				chatId,
-				'❌ Error procesando el comando. Intenta nuevamente.'
+				'Error procesando el comando. Intenta nuevamente.'
 			);
 		}
 	}
 
+	async getOrCreateUser(msg) {
+		const chatId = msg.chat.id.toString();
+		let user = await User.findOne({ chatId });
+
+		if (!user) {
+			// Usuario nuevo
+			const isAdmin = chatId === this.adminChatId;
+
+			user = new User({
+				chatId,
+				username: msg.from?.username || null,
+				firstName: msg.from?.first_name || null,
+				lastName: msg.from?.last_name || null,
+				status: isAdmin ? 'active' : 'pending',
+				isAdmin,
+			});
+
+			await user.save();
+
+			// Si no es admin, notificar al admin
+			if (!isAdmin) {
+				await this.notifyAdminNewUser(user);
+			}
+
+			console.log(`Nuevo usuario: ${user.firstName || user.username || chatId} (${user.status})`);
+		} else {
+			// Actualizar última actividad
+			user.lastActivity = new Date();
+			await user.save();
+		}
+
+		return user;
+	}
+
+	async notifyAdminNewUser(user) {
+		if (!this.adminChatId) return;
+
+		const displayName = user.firstName
+			? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+			: user.username || user.chatId;
+
+		const message = `<b>Nuevo usuario</b>
+
+Nombre: ${displayName}
+Username: ${user.username ? '@' + user.username : '-'}
+ID: <code>${user.chatId}</code>`;
+
+		await this.telegramService.bot.sendMessage(this.adminChatId, message, {
+			parse_mode: 'HTML',
+			reply_markup: {
+				inline_keyboard: [
+					[
+						{ text: 'Aprobar', callback_data: `approve_${user.chatId}` },
+						{ text: 'Rechazar', callback_data: `reject_${user.chatId}` },
+					],
+				],
+			},
+		});
+	}
+
 	async handleMessage(msg) {
-		const chatId = msg.chat.id;
+		const chatId = msg.chat.id.toString();
 		const text = msg.text?.trim();
+
+		// Verificar usuario
+		const user = await User.findOne({ chatId });
+		if (!user || user.status !== 'active') {
+			return false;
+		}
 
 		// Si no hay conversación activa, ignorar
 		if (!this.conversationState.has(chatId)) {
@@ -139,8 +229,8 @@ class TelegramCommandsService {
 			await this.processConversationStep(chatId, text);
 			return true;
 		} catch (error) {
-			console.error('❌ Error procesando mensaje:', error);
-			await this.sendMessage(chatId, '❌ Error procesando tu respuesta. Intenta nuevamente.');
+			console.error('Error procesando mensaje:', error);
+			await this.sendMessage(chatId, 'Error procesando tu respuesta. Intenta nuevamente.');
 			return true;
 		}
 	}
@@ -159,25 +249,141 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 	}
 
 	async handleHelp(chatId) {
-		const message = `<b>Comandos</b>
+		const user = await User.findOne({ chatId: chatId.toString() });
+		const isAdmin = user?.isAdmin;
+
+		let message = `<b>Comandos</b>
 
 <b>/create</b> - Crear nuevo monitor
-Inicia un asistente paso a paso
-
-<b>/monitors</b> - Ver monitores
-Muestra todos tus monitores con opciones para pausar, reanudar, buscar o eliminar
-
+<b>/monitors</b> - Ver y gestionar monitores
 <b>/cancel</b> - Cancelar operación en curso`;
+
+		if (isAdmin) {
+			message += `\n\n<b>Admin:</b>\n<b>/users</b> - Gestionar usuarios`;
+		}
 
 		await this.sendMessage(chatId, message);
 	}
 
+	async handleUsers(chatId) {
+		const users = await User.find({ isAdmin: false }).sort({ createdAt: -1 });
+
+		if (users.length === 0) {
+			await this.sendMessage(chatId, 'No hay usuarios registrados.');
+			return;
+		}
+
+		for (const user of users) {
+			await this.sendUserCard(chatId, user);
+		}
+
+		const activeCount = users.filter(u => u.status === 'active').length;
+		const pendingCount = users.filter(u => u.status === 'pending').length;
+		const blockedCount = users.filter(u => u.status === 'blocked').length;
+
+		await this.sendMessage(chatId, `${users.length} usuarios (${activeCount} activos, ${pendingCount} pendientes, ${blockedCount} bloqueados)`);
+	}
+
+	async sendUserCard(chatId, user) {
+		const displayName = user.firstName
+			? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+			: user.username || user.chatId;
+
+		const statusText = {
+			active: 'Activo',
+			pending: 'Pendiente',
+			blocked: 'Bloqueado',
+		}[user.status];
+
+		const monitorsCount = await RouteMonitor.countDocuments({ 'notifications.telegram.chatId': user.chatId });
+
+		const message = `<b>${displayName}</b>
+${user.username ? '@' + user.username : '-'}
+${statusText} | ${monitorsCount} monitores`;
+
+		const buttons = [];
+
+		if (user.status === 'active') {
+			buttons.push([
+				{ text: 'Bloquear', callback_data: `blockuser_${user.chatId}` },
+			]);
+		} else if (user.status === 'blocked') {
+			buttons.push([
+				{ text: 'Desbloquear', callback_data: `unblockuser_${user.chatId}` },
+			]);
+		} else if (user.status === 'pending') {
+			buttons.push([
+				{ text: 'Aprobar', callback_data: `approve_${user.chatId}` },
+				{ text: 'Rechazar', callback_data: `reject_${user.chatId}` },
+			]);
+		}
+
+		await this.telegramService.bot.sendMessage(chatId, message, {
+			parse_mode: 'HTML',
+			reply_markup: {
+				inline_keyboard: buttons,
+			},
+		});
+	}
+
+	async updateUserCard(chatId, messageId, user) {
+		const displayName = user.firstName
+			? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+			: user.username || user.chatId;
+
+		const statusText = {
+			active: 'Activo',
+			pending: 'Pendiente',
+			blocked: 'Bloqueado',
+		}[user.status];
+
+		const monitorsCount = await RouteMonitor.countDocuments({ 'notifications.telegram.chatId': user.chatId });
+
+		const message = `<b>${displayName}</b>
+${user.username ? '@' + user.username : '-'}
+${statusText} | ${monitorsCount} monitores`;
+
+		const buttons = [];
+
+		if (user.status === 'active') {
+			buttons.push([
+				{ text: 'Bloquear', callback_data: `blockuser_${user.chatId}` },
+			]);
+		} else if (user.status === 'blocked') {
+			buttons.push([
+				{ text: 'Desbloquear', callback_data: `unblockuser_${user.chatId}` },
+			]);
+		}
+
+		await this.telegramService.bot.editMessageText(message, {
+			chat_id: chatId,
+			message_id: messageId,
+			parse_mode: 'HTML',
+			reply_markup: {
+				inline_keyboard: buttons,
+			},
+		});
+	}
+
 	async handleListMonitors(chatId) {
 		try {
-			const monitors = await RouteMonitor.find({}).sort({createdAt: -1});
+			// Verificar si es admin para mostrar todos o solo los suyos
+			const user = await User.findOne({ chatId: chatId.toString() });
+			const isAdmin = user?.isAdmin;
+
+			let monitors;
+			if (isAdmin) {
+				// Admin ve todos los monitores
+				monitors = await RouteMonitor.find({}).sort({createdAt: -1});
+			} else {
+				// Usuario normal ve solo sus monitores
+				monitors = await RouteMonitor.find({
+					'notifications.telegram.chatId': chatId.toString()
+				}).sort({createdAt: -1});
+			}
 
 			if (monitors.length === 0) {
-				await this.sendMessage(chatId, '📭 No hay monitores configurados aún.\n\nUsa /create para crear uno.');
+				await this.sendMessage(chatId, 'No hay monitores configurados.\n\nUsa /create para crear uno.');
 				return;
 			}
 
@@ -192,8 +398,8 @@ Muestra todos tus monitores con opciones para pausar, reanudar, buscar o elimina
 
 			await this.sendMessage(chatId, `${monitors.length} monitores (${activeCount} activos, ${pausedCount} pausados)`);
 		} catch (error) {
-			console.error('❌ Error obteniendo monitores:', error);
-			await this.sendMessage(chatId, '❌ Error obteniendo la lista de monitores.');
+			console.error('Error obteniendo monitores:', error);
+			await this.sendMessage(chatId, 'Error obteniendo la lista de monitores.');
 		}
 	}
 
@@ -572,38 +778,156 @@ Usa /monitors para ver todos tus monitores.`);
 		const data = callbackQuery.data;
 
 		try {
-			const [action, monitorId] = data.split('_');
+			const [action, id] = data.split('_');
 
 			switch (action) {
 				case 'pause':
-					await this.handlePauseCallback(chatId, messageId, monitorId, callbackQuery.id);
+					await this.handlePauseCallback(chatId, messageId, id, callbackQuery.id);
 					break;
 				case 'resume':
-					await this.handleResumeCallback(chatId, messageId, monitorId, callbackQuery.id);
+					await this.handleResumeCallback(chatId, messageId, id, callbackQuery.id);
 					break;
 				case 'delete':
-					await this.handleDeleteCallback(chatId, messageId, monitorId, callbackQuery.id);
+					await this.handleDeleteCallback(chatId, messageId, id, callbackQuery.id);
 					break;
 				case 'confirmdelete':
-					await this.handleConfirmDeleteCallback(chatId, messageId, monitorId, callbackQuery.id);
+					await this.handleConfirmDeleteCallback(chatId, messageId, id, callbackQuery.id);
 					break;
 				case 'canceldelete':
-					await this.handleCancelDeleteCallback(chatId, messageId, monitorId, callbackQuery.id);
+					await this.handleCancelDeleteCallback(chatId, messageId, id, callbackQuery.id);
 					break;
 				case 'check':
-					await this.handleCheckCallback(chatId, messageId, monitorId, callbackQuery.id);
+					await this.handleCheckCallback(chatId, messageId, id, callbackQuery.id);
+					break;
+				case 'approve':
+					await this.handleApproveUserCallback(chatId, messageId, id, callbackQuery.id);
+					break;
+				case 'reject':
+					await this.handleRejectUserCallback(chatId, messageId, id, callbackQuery.id);
+					break;
+				case 'blockuser':
+					await this.handleBlockUserCallback(chatId, messageId, id, callbackQuery.id);
+					break;
+				case 'unblockuser':
+					await this.handleUnblockUserCallback(chatId, messageId, id, callbackQuery.id);
 					break;
 				default:
 					await this.telegramService.bot.answerCallbackQuery(callbackQuery.id, {
-						text: '❌ Acción no reconocida',
+						text: 'Acción no reconocida',
 					});
 			}
 		} catch (error) {
-			console.error('❌ Error en callback query:', error);
+			console.error('Error en callback query:', error);
 			await this.telegramService.bot.answerCallbackQuery(callbackQuery.id, {
-				text: '❌ Error procesando acción',
+				text: 'Error procesando acción',
 			});
 		}
+	}
+
+	async handleApproveUserCallback(chatId, messageId, userChatId, callbackId) {
+		const user = await User.findOne({ chatId: userChatId });
+		if (!user) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Usuario no encontrado',
+			});
+			return;
+		}
+
+		user.status = 'active';
+		await user.save();
+
+		const displayName = user.firstName || user.username || user.chatId;
+
+		// Actualizar mensaje del admin
+		await this.telegramService.bot.editMessageText(
+			`<b>${displayName}</b>\nAprobado`,
+			{
+				chat_id: chatId,
+				message_id: messageId,
+				parse_mode: 'HTML',
+			}
+		);
+
+		// Notificar al usuario
+		await this.telegramService.bot.sendMessage(
+			userChatId,
+			'Tu cuenta fue aprobada. Ya podés usar el bot.\n\nUsa /help para ver los comandos disponibles.'
+		);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: 'Usuario aprobado',
+		});
+
+		console.log(`Usuario aprobado: ${displayName}`);
+	}
+
+	async handleRejectUserCallback(chatId, messageId, userChatId, callbackId) {
+		const user = await User.findOne({ chatId: userChatId });
+		if (!user) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Usuario no encontrado',
+			});
+			return;
+		}
+
+		user.status = 'blocked';
+		await user.save();
+
+		const displayName = user.firstName || user.username || user.chatId;
+
+		// Actualizar mensaje del admin
+		await this.telegramService.bot.editMessageText(
+			`<s>${displayName}</s>\nRechazado`,
+			{
+				chat_id: chatId,
+				message_id: messageId,
+				parse_mode: 'HTML',
+			}
+		);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: 'Usuario rechazado',
+		});
+
+		console.log(`Usuario rechazado: ${displayName}`);
+	}
+
+	async handleBlockUserCallback(chatId, messageId, userChatId, callbackId) {
+		const user = await User.findOne({ chatId: userChatId });
+		if (!user) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Usuario no encontrado',
+			});
+			return;
+		}
+
+		user.status = 'blocked';
+		await user.save();
+
+		await this.updateUserCard(chatId, messageId, user);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: 'Usuario bloqueado',
+		});
+	}
+
+	async handleUnblockUserCallback(chatId, messageId, userChatId, callbackId) {
+		const user = await User.findOne({ chatId: userChatId });
+		if (!user) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Usuario no encontrado',
+			});
+			return;
+		}
+
+		user.status = 'active';
+		await user.save();
+
+		await this.updateUserCard(chatId, messageId, user);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: 'Usuario desbloqueado',
+		});
 	}
 
 	async handlePauseCallback(chatId, messageId, monitorId, callbackId) {
