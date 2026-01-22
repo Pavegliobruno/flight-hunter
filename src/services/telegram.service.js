@@ -35,10 +35,12 @@ class TelegramService {
 		this.bot.setMyCommands([
 			{command: 'start', description: 'Iniciar el bot y ver bienvenida'},
 			{command: 'help', description: 'Mostrar ayuda y comandos disponibles'},
+			{command: 'create', description: 'Crear un nuevo monitor de vuelos'},
 			{command: 'monitors', description: 'Ver todas las rutas monitoreadas'},
 			{command: 'status', description: 'Ver estado del sistema de monitoreo'},
 			{command: 'pause', description: 'Pausar un monitor específico'},
 			{command: 'resume', description: 'Reactivar un monitor pausado'},
+			{command: 'cancel', description: 'Cancelar operación en curso'},
 		]);
 
 		this.bot.onText(/\/(\w+)(.*)/, async (msg, match) => {
@@ -57,9 +59,15 @@ class TelegramService {
 		});
 
 		// Manejar mensajes no reconocidos (que no sean comandos)
-		this.bot.on('message', (msg) => {
+		this.bot.on('message', async (msg) => {
 			// Solo responder si no es un comando
 			if (!msg.text?.startsWith('/')) {
+				// Verificar si hay conversación activa (ej: /create)
+				if (this.commandsService) {
+					const handled = await this.commandsService.handleMessage(msg);
+					if (handled) return;
+				}
+
 				this.bot.sendMessage(
 					msg.chat.id,
 					'👋 ¡Hola! Soy el bot de monitoreo de vuelos.\n\n' +
@@ -119,25 +127,9 @@ class TelegramService {
 								text: '🔵 Skyscanner',
 								url: altLinks.skyscanner,
 							},
-						],
-						[
-							{
-								text: '🔍 Google',
-								url: altLinks.googleFlights,
-							},
 							{
 								text: '🟠 Kayak',
 								url: altLinks.kayak,
-							},
-						],
-						[
-							{
-								text: '⏸️ Pausar Monitor',
-								callback_data: `pause_${routeMonitor._id}`,
-							},
-							{
-								text: '📋 Ver Monitores',
-								callback_data: 'list_monitors',
 							},
 						],
 					],
@@ -364,16 +356,12 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 			const retSkyscanner = formatSkyscanner(returnDate);
 			const retISO = formatISO(returnDate);
 
-			links.skyscanner = `https://www.skyscanner.com/transport/flights/${origin.toLowerCase()}/${destination.toLowerCase()}/${depSkyscanner}/${retSkyscanner}/`;
-			links.googleFlights = `https://www.google.com/travel/flights?q=Flights+from+${origin}+to+${destination}+on+${depISO}+return+${retISO}`;
-			links.kayak = `https://www.kayak.com/flights/${origin}-${destination}/${depISO}/${retISO}?sort=bestflight_a`;
-			links.momondo = `https://www.momondo.com/flight-search/${origin}-${destination}/${depISO}/${retISO}`;
+			links.skyscanner = `https://www.skyscanner.com/transport/flights/${origin.toLowerCase()}/${destination.toLowerCase()}/${depSkyscanner}/${retSkyscanner}/?currency=EUR`;
+			links.kayak = `https://www.kayak.com/flights/${origin}-${destination}/${depISO}/${retISO}?sort=bestflight_a&currency=EUR`;
 		} else {
 			// Solo ida
-			links.skyscanner = `https://www.skyscanner.com/transport/flights/${origin.toLowerCase()}/${destination.toLowerCase()}/${depSkyscanner}/`;
-			links.googleFlights = `https://www.google.com/travel/flights?q=Flights+from+${origin}+to+${destination}+on+${depISO}`;
-			links.kayak = `https://www.kayak.com/flights/${origin}-${destination}/${depISO}?sort=bestflight_a`;
-			links.momondo = `https://www.momondo.com/flight-search/${origin}-${destination}/${depISO}`;
+			links.skyscanner = `https://www.skyscanner.com/transport/flights/${origin.toLowerCase()}/${destination.toLowerCase()}/${depSkyscanner}/?currency=EUR`;
+			links.kayak = `https://www.kayak.com/flights/${origin}-${destination}/${depISO}?sort=bestflight_a&currency=EUR`;
 		}
 
 		return links;
