@@ -267,104 +267,111 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 		await this.sendMessage(chatId, message);
 	}
 
-	async handleUsers(chatId) {
-		const users = await User.find({ isAdmin: false }).sort({ createdAt: -1 });
+	async handleUsers(chatId, args, msg, filter = 'all', page = 0) {
+		const USERS_PER_PAGE = 10;
 
-		if (users.length === 0) {
+		// Filtro de estado
+		const statusFilter = filter === 'all' ? {} : { status: filter };
+		const query = { isAdmin: false, ...statusFilter };
+
+		// Obtener usuarios con conteo de monitores
+		const users = await User.find(query).lean();
+
+		// Agregar conteo de monitores a cada usuario
+		const usersWithMonitors = await Promise.all(
+			users.map(async (user) => {
+				const monitorCount = await RouteMonitor.countDocuments({
+					'notifications.telegram.chatId': user.chatId,
+				});
+				return { ...user, monitorCount };
+			})
+		);
+
+		// Ordenar por cantidad de monitores (descendente)
+		usersWithMonitors.sort((a, b) => b.monitorCount - a.monitorCount);
+
+		if (usersWithMonitors.length === 0) {
 			await this.sendMessage(chatId, 'No hay usuarios registrados.');
 			return;
 		}
 
-		for (const user of users) {
-			await this.sendUserCard(chatId, user);
+		// Calcular paginación
+		const totalPages = Math.ceil(usersWithMonitors.length / USERS_PER_PAGE);
+		const currentPage = Math.min(page, totalPages - 1);
+		const startIdx = currentPage * USERS_PER_PAGE;
+		const pageUsers = usersWithMonitors.slice(startIdx, startIdx + USERS_PER_PAGE);
+
+		// Conteos por estado (del total, no filtrado)
+		const allUsers = await User.find({ isAdmin: false });
+		const activeCount = allUsers.filter(u => u.status === 'active').length;
+		const pendingCount = allUsers.filter(u => u.status === 'pending').length;
+		const blockedCount = allUsers.filter(u => u.status === 'blocked').length;
+
+		// Construir mensaje
+		const filterLabel = {
+			all: 'Todos',
+			active: 'Activos',
+			pending: 'Pendientes',
+			blocked: 'Bloqueados',
+		}[filter];
+
+		let message = `<b>Usuarios</b> (${filterLabel}: ${usersWithMonitors.length})\n`;
+		message += `━━━━━━━━━━━━━━━━\n`;
+
+		pageUsers.forEach((user, idx) => {
+			const globalIdx = startIdx + idx + 1;
+			const displayName = user.firstName
+				? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+				: user.username || `ID:${user.chatId}`;
+			const username = user.username ? ` @${user.username}` : '';
+			const statusIcon = {
+				active: '●',
+				pending: '○',
+				blocked: '✕',
+			}[user.status];
+
+			message += `${globalIdx}. ${statusIcon} ${displayName}${username} · ${user.monitorCount} mon.\n`;
+		});
+
+		message += `\n<i>Total: ${allUsers.length} (${activeCount} activos, ${pendingCount} pend., ${blockedCount} bloq.)</i>`;
+
+		// Botones de filtro
+		const filterButtons = [
+			{ text: filter === 'all' ? '• Todos' : 'Todos', callback_data: 'usersfilter_all_0' },
+			{ text: filter === 'active' ? '• Activos' : 'Activos', callback_data: 'usersfilter_active_0' },
+			{ text: filter === 'pending' ? '• Pend.' : 'Pend.', callback_data: 'usersfilter_pending_0' },
+			{ text: filter === 'blocked' ? '• Bloq.' : 'Bloq.', callback_data: 'usersfilter_blocked_0' },
+		];
+
+		// Botones de paginación
+		const navButtons = [];
+		if (currentPage > 0) {
+			navButtons.push({ text: '← Anterior', callback_data: `userspage_${filter}_${currentPage - 1}` });
+		}
+		navButtons.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: 'noop' });
+		if (currentPage < totalPages - 1) {
+			navButtons.push({ text: 'Siguiente →', callback_data: `userspage_${filter}_${currentPage + 1}` });
 		}
 
-		const activeCount = users.filter(u => u.status === 'active').length;
-		const pendingCount = users.filter(u => u.status === 'pending').length;
-		const blockedCount = users.filter(u => u.status === 'blocked').length;
-
-		await this.sendMessage(chatId, `${users.length} usuarios (${activeCount} activos, ${pendingCount} pendientes, ${blockedCount} bloqueados)`);
-	}
-
-	async sendUserCard(chatId, user) {
-		const displayName = user.firstName
-			? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
-			: user.username || user.chatId;
-
-		const statusText = {
-			active: 'Activo',
-			pending: 'Pendiente',
-			blocked: 'Bloqueado',
-		}[user.status];
-
-		const monitorsCount = await RouteMonitor.countDocuments({ 'notifications.telegram.chatId': user.chatId });
-
-		const message = `<b>${displayName}</b>
-${user.username ? '@' + user.username : '-'}
-${statusText} | ${monitorsCount} monitores`;
-
-		const buttons = [];
-
-		if (user.status === 'active') {
-			buttons.push([
-				{ text: 'Monitores', callback_data: `usermonitors_${user.chatId}` },
-				{ text: 'Bloquear', callback_data: `blockuser_${user.chatId}` },
-			]);
-		} else if (user.status === 'blocked') {
-			buttons.push([
-				{ text: 'Desbloquear', callback_data: `unblockuser_${user.chatId}` },
-			]);
-		} else if (user.status === 'pending') {
-			buttons.push([
-				{ text: 'Aprobar', callback_data: `approve_${user.chatId}` },
-				{ text: 'Rechazar', callback_data: `reject_${user.chatId}` },
-			]);
+		// Botones para seleccionar usuario (números)
+		const userSelectButtons = [];
+		for (let i = 0; i < pageUsers.length; i += 5) {
+			const row = pageUsers.slice(i, i + 5).map((user, idx) => ({
+				text: `${startIdx + i + idx + 1}`,
+				callback_data: `userselect_${user.chatId}_${filter}_${currentPage}`,
+			}));
+			userSelectButtons.push(row);
 		}
+
+		const keyboard = [
+			filterButtons,
+			...userSelectButtons,
+			navButtons,
+		];
 
 		await this.telegramService.bot.sendMessage(chatId, message, {
 			parse_mode: 'HTML',
-			reply_markup: {
-				inline_keyboard: buttons,
-			},
-		});
-	}
-
-	async updateUserCard(chatId, messageId, user) {
-		const displayName = user.firstName
-			? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
-			: user.username || user.chatId;
-
-		const statusText = {
-			active: 'Activo',
-			pending: 'Pendiente',
-			blocked: 'Bloqueado',
-		}[user.status];
-
-		const monitorsCount = await RouteMonitor.countDocuments({ 'notifications.telegram.chatId': user.chatId });
-
-		const message = `<b>${displayName}</b>
-${user.username ? '@' + user.username : '-'}
-${statusText} | ${monitorsCount} monitores`;
-
-		const buttons = [];
-
-		if (user.status === 'active') {
-			buttons.push([
-				{ text: 'Bloquear', callback_data: `blockuser_${user.chatId}` },
-			]);
-		} else if (user.status === 'blocked') {
-			buttons.push([
-				{ text: 'Desbloquear', callback_data: `unblockuser_${user.chatId}` },
-			]);
-		}
-
-		await this.telegramService.bot.editMessageText(message, {
-			chat_id: chatId,
-			message_id: messageId,
-			parse_mode: 'HTML',
-			reply_markup: {
-				inline_keyboard: buttons,
-			},
+			reply_markup: { inline_keyboard: keyboard },
 		});
 	}
 
@@ -786,6 +793,32 @@ Usa /monitors para ver todos tus monitores.`);
 		const data = callbackQuery.data;
 
 		try {
+			// Callbacks con formato especial (usersfilter_status_page, userspage_filter_page)
+			if (data.startsWith('usersfilter_')) {
+				const [, filter, page] = data.split('_');
+				await this.handleUsersFilterCallback(chatId, messageId, filter, parseInt(page), callbackQuery.id);
+				return;
+			}
+			if (data.startsWith('userspage_')) {
+				const [, filter, page] = data.split('_');
+				await this.handleUsersFilterCallback(chatId, messageId, filter, parseInt(page), callbackQuery.id);
+				return;
+			}
+			if (data.startsWith('userselect_')) {
+				const userChatId = data.replace('userselect_', '');
+				await this.handleUserSelectCallback(chatId, messageId, userChatId, callbackQuery.id);
+				return;
+			}
+			if (data.startsWith('userback_')) {
+				const [, filter, page] = data.split('_');
+				await this.handleUsersFilterCallback(chatId, messageId, filter, parseInt(page), callbackQuery.id);
+				return;
+			}
+			if (data === 'noop') {
+				await this.telegramService.bot.answerCallbackQuery(callbackQuery.id);
+				return;
+			}
+
 			const [action, id] = data.split('_');
 
 			switch (action) {
@@ -933,11 +966,12 @@ Usa /monitors para ver todos tus monitores.`);
 		user.status = 'blocked';
 		await user.save();
 
-		await this.updateUserCard(chatId, messageId, user);
-
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
 			text: 'Usuario bloqueado',
 		});
+
+		// Actualizar vista del usuario
+		await this.refreshUserDetailView(chatId, messageId, user);
 	}
 
 	async handleUnblockUserCallback(chatId, messageId, userChatId, callbackId) {
@@ -952,10 +986,243 @@ Usa /monitors para ver todos tus monitores.`);
 		user.status = 'active';
 		await user.save();
 
-		await this.updateUserCard(chatId, messageId, user);
-
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
 			text: 'Usuario desbloqueado',
+		});
+
+		// Actualizar vista del usuario
+		await this.refreshUserDetailView(chatId, messageId, user);
+	}
+
+	async refreshUserDetailView(chatId, messageId, user) {
+		const monitorCount = await RouteMonitor.countDocuments({
+			'notifications.telegram.chatId': user.chatId,
+		});
+
+		const displayName = user.firstName
+			? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+			: user.username || `ID:${user.chatId}`;
+
+		const statusText = {
+			active: 'Activo',
+			pending: 'Pendiente',
+			blocked: 'Bloqueado',
+		}[user.status];
+
+		let message = `<b>${displayName}</b>\n`;
+		message += user.username ? `@${user.username}\n` : '';
+		message += `Estado: ${statusText}\n`;
+		message += `Monitores: ${monitorCount}\n`;
+		message += `ID: <code>${user.chatId}</code>`;
+
+		const buttons = [];
+
+		if (user.status === 'active') {
+			buttons.push([
+				{ text: 'Ver monitores', callback_data: `usermonitors_${user.chatId}` },
+				{ text: 'Bloquear', callback_data: `blockuser_${user.chatId}` },
+			]);
+		} else if (user.status === 'blocked') {
+			buttons.push([
+				{ text: 'Desbloquear', callback_data: `unblockuser_${user.chatId}` },
+			]);
+		} else if (user.status === 'pending') {
+			buttons.push([
+				{ text: 'Aprobar', callback_data: `approve_${user.chatId}` },
+				{ text: 'Rechazar', callback_data: `reject_${user.chatId}` },
+			]);
+		}
+
+		buttons.push([
+			{ text: '← Volver a lista', callback_data: `userback_all_0` },
+		]);
+
+		await this.telegramService.bot.editMessageText(message, {
+			chat_id: chatId,
+			message_id: messageId,
+			parse_mode: 'HTML',
+			reply_markup: { inline_keyboard: buttons },
+		});
+	}
+
+	async handleUsersFilterCallback(chatId, messageId, filter, page, callbackId) {
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+
+		const USERS_PER_PAGE = 10;
+
+		// Filtro de estado
+		const statusFilter = filter === 'all' ? {} : { status: filter };
+		const query = { isAdmin: false, ...statusFilter };
+
+		// Obtener usuarios con conteo de monitores
+		const users = await User.find(query).lean();
+
+		const usersWithMonitors = await Promise.all(
+			users.map(async (user) => {
+				const monitorCount = await RouteMonitor.countDocuments({
+					'notifications.telegram.chatId': user.chatId,
+				});
+				return { ...user, monitorCount };
+			})
+		);
+
+		// Ordenar por cantidad de monitores (descendente)
+		usersWithMonitors.sort((a, b) => b.monitorCount - a.monitorCount);
+
+		if (usersWithMonitors.length === 0) {
+			await this.telegramService.bot.editMessageText('No hay usuarios con ese filtro.', {
+				chat_id: chatId,
+				message_id: messageId,
+			});
+			return;
+		}
+
+		// Calcular paginación
+		const totalPages = Math.ceil(usersWithMonitors.length / USERS_PER_PAGE);
+		const currentPage = Math.min(page, totalPages - 1);
+		const startIdx = currentPage * USERS_PER_PAGE;
+		const pageUsers = usersWithMonitors.slice(startIdx, startIdx + USERS_PER_PAGE);
+
+		// Conteos por estado
+		const allUsers = await User.find({ isAdmin: false });
+		const activeCount = allUsers.filter(u => u.status === 'active').length;
+		const pendingCount = allUsers.filter(u => u.status === 'pending').length;
+		const blockedCount = allUsers.filter(u => u.status === 'blocked').length;
+
+		const filterLabel = {
+			all: 'Todos',
+			active: 'Activos',
+			pending: 'Pendientes',
+			blocked: 'Bloqueados',
+		}[filter];
+
+		let message = `<b>Usuarios</b> (${filterLabel}: ${usersWithMonitors.length})\n`;
+		message += `━━━━━━━━━━━━━━━━\n`;
+
+		pageUsers.forEach((user, idx) => {
+			const globalIdx = startIdx + idx + 1;
+			const displayName = user.firstName
+				? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+				: user.username || `ID:${user.chatId}`;
+			const username = user.username ? ` @${user.username}` : '';
+			const statusIcon = {
+				active: '●',
+				pending: '○',
+				blocked: '✕',
+			}[user.status];
+
+			message += `${globalIdx}. ${statusIcon} ${displayName}${username} · ${user.monitorCount} mon.\n`;
+		});
+
+		message += `\n<i>Total: ${allUsers.length} (${activeCount} activos, ${pendingCount} pend., ${blockedCount} bloq.)</i>`;
+
+		// Botones de filtro
+		const filterButtons = [
+			{ text: filter === 'all' ? '• Todos' : 'Todos', callback_data: 'usersfilter_all_0' },
+			{ text: filter === 'active' ? '• Activos' : 'Activos', callback_data: 'usersfilter_active_0' },
+			{ text: filter === 'pending' ? '• Pend.' : 'Pend.', callback_data: 'usersfilter_pending_0' },
+			{ text: filter === 'blocked' ? '• Bloq.' : 'Bloq.', callback_data: 'usersfilter_blocked_0' },
+		];
+
+		// Botones de paginación
+		const navButtons = [];
+		if (currentPage > 0) {
+			navButtons.push({ text: '← Anterior', callback_data: `userspage_${filter}_${currentPage - 1}` });
+		}
+		navButtons.push({ text: `${currentPage + 1}/${totalPages}`, callback_data: 'noop' });
+		if (currentPage < totalPages - 1) {
+			navButtons.push({ text: 'Siguiente →', callback_data: `userspage_${filter}_${currentPage + 1}` });
+		}
+
+		// Botones para seleccionar usuario
+		const userSelectButtons = [];
+		for (let i = 0; i < pageUsers.length; i += 5) {
+			const row = pageUsers.slice(i, i + 5).map((user, idx) => ({
+				text: `${startIdx + i + idx + 1}`,
+				callback_data: `userselect_${user.chatId}_${filter}_${currentPage}`,
+			}));
+			userSelectButtons.push(row);
+		}
+
+		const keyboard = [
+			filterButtons,
+			...userSelectButtons,
+			navButtons,
+		];
+
+		await this.telegramService.bot.editMessageText(message, {
+			chat_id: chatId,
+			message_id: messageId,
+			parse_mode: 'HTML',
+			reply_markup: { inline_keyboard: keyboard },
+		});
+	}
+
+	async handleUserSelectCallback(chatId, messageId, userChatId, callbackId) {
+		// Parsear datos del callback (userselect_chatId_filter_page)
+		const parts = userChatId.split('_');
+		const actualChatId = parts[0];
+		const filter = parts[1] || 'all';
+		const page = parseInt(parts[2]) || 0;
+
+		const user = await User.findOne({ chatId: actualChatId });
+		if (!user) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Usuario no encontrado',
+			});
+			return;
+		}
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+
+		const monitorCount = await RouteMonitor.countDocuments({
+			'notifications.telegram.chatId': actualChatId,
+		});
+
+		const displayName = user.firstName
+			? `${user.firstName}${user.lastName ? ' ' + user.lastName : ''}`
+			: user.username || `ID:${user.chatId}`;
+
+		const statusText = {
+			active: 'Activo',
+			pending: 'Pendiente',
+			blocked: 'Bloqueado',
+		}[user.status];
+
+		let message = `<b>${displayName}</b>\n`;
+		message += user.username ? `@${user.username}\n` : '';
+		message += `Estado: ${statusText}\n`;
+		message += `Monitores: ${monitorCount}\n`;
+		message += `ID: <code>${user.chatId}</code>`;
+
+		const buttons = [];
+
+		// Acciones según estado
+		if (user.status === 'active') {
+			buttons.push([
+				{ text: 'Ver monitores', callback_data: `usermonitors_${actualChatId}` },
+				{ text: 'Bloquear', callback_data: `blockuser_${actualChatId}` },
+			]);
+		} else if (user.status === 'blocked') {
+			buttons.push([
+				{ text: 'Desbloquear', callback_data: `unblockuser_${actualChatId}` },
+			]);
+		} else if (user.status === 'pending') {
+			buttons.push([
+				{ text: 'Aprobar', callback_data: `approve_${actualChatId}` },
+				{ text: 'Rechazar', callback_data: `reject_${actualChatId}` },
+			]);
+		}
+
+		buttons.push([
+			{ text: '← Volver a lista', callback_data: `userback_${filter}_${page}` },
+		]);
+
+		await this.telegramService.bot.editMessageText(message, {
+			chat_id: chatId,
+			message_id: messageId,
+			parse_mode: 'HTML',
+			reply_markup: { inline_keyboard: buttons },
 		});
 	}
 
