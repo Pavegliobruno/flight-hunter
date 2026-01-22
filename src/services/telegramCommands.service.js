@@ -422,15 +422,18 @@ Ida: ${idaStr}`;
 			buttons.push([
 				{ text: 'Pausar', callback_data: `pause_${monitor._id}` },
 				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
-				{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
 			]);
 		} else {
 			buttons.push([
 				{ text: 'Reanudar', callback_data: `resume_${monitor._id}` },
 				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
-				{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
 			]);
 		}
+
+		buttons.push([
+			{ text: 'Editar', callback_data: `edit_${monitor._id}` },
+			{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
+		]);
 
 		await this.telegramService.bot.sendMessage(chatId, message, {
 			parse_mode: 'HTML',
@@ -513,6 +516,18 @@ ${airportList}
 				break;
 			case 'confirm':
 				await this.handleConfirmStep(chatId, text, state);
+				break;
+			case 'edit_price':
+				await this.handleEditPriceStep(chatId, text, state);
+				break;
+			case 'edit_stops':
+				await this.handleEditStopsStep(chatId, text, state);
+				break;
+			case 'edit_outbound':
+				await this.handleEditOutboundStep(chatId, text, state);
+				break;
+			case 'edit_inbound':
+				await this.handleEditInboundStep(chatId, text, state);
 				break;
 		}
 	}
@@ -805,6 +820,24 @@ Usa /monitors para ver todos tus monitores.`);
 				case 'usermonitors':
 					await this.handleUserMonitorsCallback(chatId, id, callbackQuery.id);
 					break;
+				case 'edit':
+					await this.handleEditCallback(chatId, messageId, id, callbackQuery.id);
+					break;
+				case 'editprice':
+					await this.handleEditFieldCallback(chatId, id, 'price', callbackQuery.id);
+					break;
+				case 'editstops':
+					await this.handleEditFieldCallback(chatId, id, 'stops', callbackQuery.id);
+					break;
+				case 'editoutbound':
+					await this.handleEditFieldCallback(chatId, id, 'outbound', callbackQuery.id);
+					break;
+				case 'editinbound':
+					await this.handleEditFieldCallback(chatId, id, 'inbound', callbackQuery.id);
+					break;
+				case 'editback':
+					await this.handleEditBackCallback(chatId, messageId, id, callbackQuery.id);
+					break;
 				default:
 					await this.telegramService.bot.answerCallbackQuery(callbackQuery.id, {
 						text: 'Acción no reconocida',
@@ -950,6 +983,254 @@ Usa /monitors para ver todos tus monitores.`);
 		for (const monitor of monitors) {
 			await this.sendMonitorCard(chatId, monitor);
 		}
+	}
+
+	async handleEditCallback(chatId, messageId, monitorId, callbackId) {
+		const monitor = await RouteMonitor.findById(monitorId);
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Monitor no encontrado',
+			});
+			return;
+		}
+
+		const outbound = monitor.outboundDateRange;
+		const inbound = monitor.inboundDateRange;
+		const stopsText = monitor.maxStops === null ? 'Sin límite' : monitor.maxStops;
+
+		const message = `<b>Editar: ${monitor.name}</b>
+
+Precio umbral: €${monitor.priceThreshold}
+Escalas máx: ${stopsText}
+Ida: ${this.formatShortDate(outbound?.startDate)} - ${this.formatShortDate(outbound?.endDate)}
+${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.formatShortDate(inbound?.endDate)}` : ''}
+
+¿Qué querés editar?`;
+
+		const buttons = [
+			[
+				{ text: 'Precio', callback_data: `editprice_${monitorId}` },
+				{ text: 'Escalas', callback_data: `editstops_${monitorId}` },
+			],
+			[
+				{ text: 'Fechas ida', callback_data: `editoutbound_${monitorId}` },
+			],
+		];
+
+		if (monitor.flightType === 'roundtrip') {
+			buttons[1].push({ text: 'Fechas vuelta', callback_data: `editinbound_${monitorId}` });
+		}
+
+		buttons.push([{ text: '← Volver', callback_data: `editback_${monitorId}` }]);
+
+		await this.telegramService.bot.editMessageText(message, {
+			chat_id: chatId,
+			message_id: messageId,
+			parse_mode: 'HTML',
+			reply_markup: {
+				inline_keyboard: buttons,
+			},
+		});
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+	}
+
+	async handleEditFieldCallback(chatId, monitorId, field, callbackId) {
+		const monitor = await RouteMonitor.findById(monitorId);
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Monitor no encontrado',
+			});
+			return;
+		}
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+
+		// Guardar estado de edición
+		this.conversationState.set(chatId.toString(), {
+			step: `edit_${field}`,
+			data: { monitorId },
+		});
+
+		const prompts = {
+			price: `Ingresá el nuevo precio umbral en EUR:\n\nActual: €${monitor.priceThreshold}`,
+			stops: `Ingresá el máximo de escalas (0-5) o "cualquiera":\n\nActual: ${monitor.maxStops === null ? 'Sin límite' : monitor.maxStops}`,
+			outbound: `Ingresá las nuevas fechas de ida:\n<code>YYYY-MM-DD YYYY-MM-DD</code>\n\nActual: ${this.formatShortDate(monitor.outboundDateRange?.startDate)} - ${this.formatShortDate(monitor.outboundDateRange?.endDate)}`,
+			inbound: `Ingresá las nuevas fechas de vuelta:\n<code>YYYY-MM-DD YYYY-MM-DD</code>\n\nActual: ${this.formatShortDate(monitor.inboundDateRange?.startDate)} - ${this.formatShortDate(monitor.inboundDateRange?.endDate)}`,
+		};
+
+		await this.sendMessage(chatId, prompts[field]);
+	}
+
+	async handleEditPriceStep(chatId, text, state) {
+		const price = parseInt(text.trim());
+
+		if (isNaN(price) || price <= 0 || price > 10000) {
+			await this.sendMessage(chatId, 'Precio inválido. Debe ser un número entre 1 y 10000.');
+			return;
+		}
+
+		const monitor = await RouteMonitor.findById(state.data.monitorId);
+		if (!monitor) {
+			await this.sendMessage(chatId, 'Monitor no encontrado.');
+			this.conversationState.delete(chatId);
+			return;
+		}
+
+		monitor.priceThreshold = price;
+		await monitor.save();
+
+		this.conversationState.delete(chatId);
+		await this.sendMessage(chatId, `Precio actualizado a €${price}`);
+	}
+
+	async handleEditStopsStep(chatId, text, state) {
+		const input = text.trim().toLowerCase();
+		let maxStops;
+
+		if (input === 'cualquiera' || input === 'any' || input === '-') {
+			maxStops = null;
+		} else {
+			maxStops = parseInt(input);
+			if (isNaN(maxStops) || maxStops < 0 || maxStops > 5) {
+				await this.sendMessage(chatId, 'Valor inválido. Debe ser 0-5 o "cualquiera".');
+				return;
+			}
+		}
+
+		const monitor = await RouteMonitor.findById(state.data.monitorId);
+		if (!monitor) {
+			await this.sendMessage(chatId, 'Monitor no encontrado.');
+			this.conversationState.delete(chatId);
+			return;
+		}
+
+		monitor.maxStops = maxStops;
+		await monitor.save();
+
+		this.conversationState.delete(chatId);
+		await this.sendMessage(chatId, `Escalas máximas actualizado a ${maxStops === null ? 'sin límite' : maxStops}`);
+	}
+
+	async handleEditOutboundStep(chatId, text, state) {
+		const dates = text.trim().split(/\s+/);
+		const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+		if (!dateRegex.test(dates[0])) {
+			await this.sendMessage(chatId, 'Formato inválido. Usa YYYY-MM-DD (ej: 2026-05-01)');
+			return;
+		}
+
+		const startDate = dates[0];
+		const endDate = dates[1] && dateRegex.test(dates[1]) ? dates[1] : dates[0];
+
+		const monitor = await RouteMonitor.findById(state.data.monitorId);
+		if (!monitor) {
+			await this.sendMessage(chatId, 'Monitor no encontrado.');
+			this.conversationState.delete(chatId);
+			return;
+		}
+
+		monitor.outboundDateRange = {
+			startDate,
+			endDate,
+			flexible: startDate !== endDate,
+		};
+		await monitor.save();
+
+		this.conversationState.delete(chatId);
+		await this.sendMessage(chatId, `Fechas de ida actualizadas: ${this.formatShortDate(startDate)} - ${this.formatShortDate(endDate)}`);
+	}
+
+	async handleEditInboundStep(chatId, text, state) {
+		const dates = text.trim().split(/\s+/);
+		const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+		if (!dateRegex.test(dates[0])) {
+			await this.sendMessage(chatId, 'Formato inválido. Usa YYYY-MM-DD (ej: 2026-05-30)');
+			return;
+		}
+
+		const startDate = dates[0];
+		const endDate = dates[1] && dateRegex.test(dates[1]) ? dates[1] : dates[0];
+
+		const monitor = await RouteMonitor.findById(state.data.monitorId);
+		if (!monitor) {
+			await this.sendMessage(chatId, 'Monitor no encontrado.');
+			this.conversationState.delete(chatId);
+			return;
+		}
+
+		monitor.inboundDateRange = {
+			startDate,
+			endDate,
+			flexible: startDate !== endDate,
+		};
+		await monitor.save();
+
+		this.conversationState.delete(chatId);
+		await this.sendMessage(chatId, `Fechas de vuelta actualizadas: ${this.formatShortDate(startDate)} - ${this.formatShortDate(endDate)}`);
+	}
+
+	async handleEditBackCallback(chatId, messageId, monitorId, callbackId) {
+		const monitor = await RouteMonitor.findById(monitorId);
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Monitor no encontrado',
+			});
+			return;
+		}
+
+		// Restaurar tarjeta del monitor
+		const status = monitor.isActive ? 'Activo' : 'Pausado';
+		const bestPrice = monitor.bestPrice?.amount
+			? `€${Math.round(monitor.bestPrice.amount)}`
+			: '-';
+
+		const outbound = monitor.outboundDateRange;
+		const inbound = monitor.inboundDateRange;
+		const idaStr = outbound ? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}` : '-';
+		const vueltaStr = inbound ? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}` : '';
+
+		let message = `<b>${monitor.name}</b>
+${monitor.origin} → ${monitor.destination}
+Ida: ${idaStr}`;
+
+		if (monitor.flightType === 'roundtrip' && vueltaStr) {
+			message += `\nVuelta: ${vueltaStr}`;
+		}
+
+		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+
+		const buttons = [];
+
+		if (monitor.isActive) {
+			buttons.push([
+				{ text: 'Pausar', callback_data: `pause_${monitor._id}` },
+				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+			]);
+		} else {
+			buttons.push([
+				{ text: 'Reanudar', callback_data: `resume_${monitor._id}` },
+				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+			]);
+		}
+
+		buttons.push([
+			{ text: 'Editar', callback_data: `edit_${monitor._id}` },
+			{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
+		]);
+
+		await this.telegramService.bot.editMessageText(message, {
+			chat_id: chatId,
+			message_id: messageId,
+			parse_mode: 'HTML',
+			reply_markup: {
+				inline_keyboard: buttons,
+			},
+		});
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
 	}
 
 	async handlePauseCallback(chatId, messageId, monitorId, callbackId) {
