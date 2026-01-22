@@ -406,6 +406,7 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 		const bestPrice = monitor.bestPrice?.amount
 			? `€${Math.round(monitor.bestPrice.amount)}`
 			: '-';
+		const alertsSent = monitor.stats?.alertsSent || 0;
 
 		const outbound = monitor.outboundDateRange;
 		const inbound = monitor.inboundDateRange;
@@ -421,6 +422,7 @@ Ida: ${idaStr}`;
 		}
 
 		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		// Botones según estado
 		const buttons = [];
@@ -758,14 +760,11 @@ ${state.data.flightType === 'roundtrip' ? `📅 <b>Vuelta:</b> ${state.data.inbo
 
 				this.conversationState.delete(chatId);
 
-				await this.sendMessage(chatId, `✅ <b>¡Monitor creado exitosamente!</b>
+				await this.sendMessage(chatId, `✅ <b>Monitor creado</b>
 
-🆔 ID: <code>${monitor._id}</code>
-🛫 ${monitor.origin} → ${monitor.destination}
-💰 Umbral: €${monitor.priceThreshold}
+${monitor.origin} → ${monitor.destination} · Umbral €${monitor.priceThreshold}
 
-El monitor comenzará a buscar vuelos en el próximo ciclo.
-Usa /monitors para ver todos tus monitores.`);
+Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por debajo de tu umbral.`);
 
 				console.log(`✅ Monitor creado desde Telegram: ${monitor.name} (${monitor._id})`);
 			} catch (error) {
@@ -1453,6 +1452,7 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		const bestPrice = monitor.bestPrice?.amount
 			? `€${Math.round(monitor.bestPrice.amount)}`
 			: '-';
+		const alertsSent = monitor.stats?.alertsSent || 0;
 
 		const outbound = monitor.outboundDateRange;
 		const inbound = monitor.inboundDateRange;
@@ -1468,6 +1468,7 @@ Ida: ${idaStr}`;
 		}
 
 		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		const buttons = [];
 
@@ -1658,6 +1659,7 @@ ${monitor.origin} → ${monitor.destination}`;
 		const bestPrice = monitor.bestPrice?.amount
 			? `€${Math.round(monitor.bestPrice.amount)}`
 			: '-';
+		const alertsSent = monitor.stats?.alertsSent || 0;
 
 		const outbound = monitor.outboundDateRange;
 		const inbound = monitor.inboundDateRange;
@@ -1673,6 +1675,7 @@ Ida: ${idaStr}`;
 		}
 
 		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		const buttons = [];
 
