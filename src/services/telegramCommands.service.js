@@ -214,26 +214,18 @@ ID: <code>${user.chatId}</code>`;
 		const chatId = msg.chat.id.toString();
 		const text = msg.text?.trim();
 
-		// Debug: mostrar estado actual
-		const hasState = this.conversationState.has(chatId);
-		const currentState = this.conversationState.get(chatId);
-		console.log(`📨 Mensaje recibido: "${text}" | chatId: ${chatId} | hasState: ${hasState} | step: ${currentState?.step || 'none'}`);
-
 		// Si no hay conversación activa, ignorar
-		if (!hasState) {
-			console.log(`⚠️ No hay conversación activa para ${chatId}`);
+		if (!this.conversationState.has(chatId)) {
 			return false;
 		}
 
 		// Verificar usuario solo si hay conversación activa
 		const user = await User.findOne({ chatId });
 		if (!user || user.status !== 'active') {
-			console.log(`⚠️ Usuario no activo: ${chatId}, status: ${user?.status}`);
 			return false;
 		}
 
 		try {
-			console.log(`💬 Procesando paso: ${currentState.step}`);
 			await this.processConversationStep(chatId, text);
 			return true;
 		} catch (error) {
@@ -464,12 +456,10 @@ Ida: ${idaStr}`;
 
 	async handleCreate(chatId) {
 		// Iniciar conversación
-		console.log(`🆕 Creando conversación para chatId: ${chatId}`);
 		this.conversationState.set(chatId, {
 			step: 'origin',
 			data: {},
 		});
-		console.log(`✅ Conversación creada. Total activas: ${this.conversationState.size}`);
 
 		const airportList = this.formatAirportList();
 

@@ -1,11 +1,19 @@
 const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config();
 
+// Singleton instance
+let instance = null;
+
 class TelegramService {
 	constructor() {
+		// Singleton pattern - si ya existe una instancia, retornarla
+		if (instance) {
+			return instance;
+		}
+
 		this.bot = null;
 		this.defaultChatId = process.env.TELEGRAM_CHAT_ID;
-		this.sentAlerts = new Set(); // Almacena IDs de vuelos ya enviados
+		this.sentAlerts = new Set();
 		this.commandsService = null;
 
 		if (process.env.TELEGRAM_BOT_TOKEN) {
@@ -15,10 +23,12 @@ class TelegramService {
 
 			this.initializeCommands();
 
-			console.log('📱 Telegram bot inicializado');
+			console.log('📱 Telegram bot inicializado (singleton)');
 		} else {
 			console.warn('⚠️  TELEGRAM_BOT_TOKEN no configurado');
 		}
+
+		instance = this;
 	}
 
 	initializeCommands() {
@@ -69,14 +79,11 @@ class TelegramService {
 
 				// Si no es comando, verificar conversación activa
 				if (this.commandsService) {
-					console.log(`🔍 Verificando conversación para: "${msg.text?.substring(0, 30)}"`);
 					const handled = await this.commandsService.handleMessage(msg);
-					console.log(`🔍 handleMessage retornó: ${handled}`);
 					if (handled) return;
 				}
 
 				// Solo enviar saludo si no hay conversación activa
-				console.log(`⚠️ Sin conversación - enviando saludo`);
 				this.bot.sendMessage(
 					msg.chat.id,
 					'Usa /help para ver los comandos disponibles.'
