@@ -76,6 +76,17 @@ class TelegramService {
 			}
 		});
 
+		// Manejar callback queries (botones inline)
+		this.bot.on('callback_query', async (callbackQuery) => {
+			try {
+				if (this.commandsService) {
+					await this.commandsService.handleCallbackQuery(callbackQuery);
+				}
+			} catch (error) {
+				console.error('❌ Error en callback query:', error);
+			}
+		});
+
 		// Manejar errores del bot
 		this.bot.on('polling_error', (error) => {
 			console.error('❌ Telegram polling error:', error.code, error.message);

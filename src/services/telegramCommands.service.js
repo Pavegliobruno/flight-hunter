@@ -196,57 +196,66 @@ Recibirás alertas automáticas cuando encuentre precios bajos en las rutas que 
 			const monitors = await RouteMonitor.find({}).sort({createdAt: -1});
 
 			if (monitors.length === 0) {
-				await this.sendMessage(chatId, '📭 No hay monitores configurados aún.');
+				await this.sendMessage(chatId, '📭 No hay monitores configurados aún.\n\nUsa /create para crear uno.');
 				return;
 			}
 
-			let message = `📋 <b>Monitores de Vuelos (${monitors.length})</b>\n\n`;
-
+			// Enviar cada monitor con sus botones
 			for (const monitor of monitors) {
-				const status = monitor.isActive ? '✅ Activo' : '⏸️ Pausado';
-				const bestPrice = monitor.bestPrice?.amount
-					? `€${Math.round(monitor.bestPrice.amount)}`
-					: 'N/A';
-
-				const lastChecked = monitor.lastChecked
-					? this.formatDate(monitor.lastChecked)
-					: 'Nunca';
-
-				const flightTypeIcon = monitor.flightType === 'roundtrip' ? '🔄' : '➡️';
-
-				message += `${flightTypeIcon} <b>${monitor.name}</b>\n`;
-				message += `📍 ${monitor.origin} → ${monitor.destination}\n`;
-				message += `💰 Umbral: €${monitor.priceThreshold} | Mejor: ${bestPrice}\n`;
-				message += `${status} | Última: ${lastChecked}\n`;
-				message += `🆔 <code>${monitor._id}</code>\n\n`;
-
-				// Telegram tiene límite de 4096 caracteres por mensaje
-				if (message.length > 3500) {
-					await this.sendMessage(chatId, message);
-					message = '';
-				}
+				await this.sendMonitorCard(chatId, monitor);
 			}
 
-			if (message.length > 0) {
-				await this.sendMessage(chatId, message);
-			}
-
-			// Mensaje con resumen
+			// Resumen final
 			const activeCount = monitors.filter((m) => m.isActive).length;
 			const pausedCount = monitors.length - activeCount;
 
-			const summary =
-				`📊 <b>Resumen:</b> ${activeCount} activos, ${pausedCount} pausados\n\n` +
-				`💡 <b>Tip:</b> Copia un ID y usa /pause [ID] o /resume [ID]`;
-
-			await this.sendMessage(chatId, summary);
+			await this.sendMessage(chatId, `📊 <b>Total:</b> ${monitors.length} monitores (${activeCount} activos, ${pausedCount} pausados)`);
 		} catch (error) {
 			console.error('❌ Error obteniendo monitores:', error);
-			await this.sendMessage(
-				chatId,
-				'❌ Error obteniendo la lista de monitores.'
-			);
+			await this.sendMessage(chatId, '❌ Error obteniendo la lista de monitores.');
 		}
+	}
+
+	async sendMonitorCard(chatId, monitor) {
+		const status = monitor.isActive ? '✅ Activo' : '⏸️ Pausado';
+		const bestPrice = monitor.bestPrice?.amount
+			? `€${Math.round(monitor.bestPrice.amount)}`
+			: '-';
+		const lastChecked = monitor.lastChecked
+			? this.formatDate(monitor.lastChecked)
+			: 'Nunca';
+		const flightTypeIcon = monitor.flightType === 'roundtrip' ? '🔄' : '➡️';
+
+		const message = `${flightTypeIcon} <b>${monitor.name}</b>
+📍 ${monitor.origin} → ${monitor.destination}
+💰 Umbral: €${monitor.priceThreshold} | Mejor: ${bestPrice}
+${status} | Últ: ${lastChecked}`;
+
+		// Botones según estado
+		const buttons = [];
+
+		if (monitor.isActive) {
+			buttons.push([
+				{ text: '⏸️ Pausar', callback_data: `pause_${monitor._id}` },
+				{ text: '🔍 Buscar', callback_data: `check_${monitor._id}` },
+			]);
+		} else {
+			buttons.push([
+				{ text: '▶️ Reanudar', callback_data: `resume_${monitor._id}` },
+				{ text: '🔍 Buscar', callback_data: `check_${monitor._id}` },
+			]);
+		}
+
+		buttons.push([
+			{ text: '🗑️ Eliminar', callback_data: `delete_${monitor._id}` },
+		]);
+
+		await this.telegramService.bot.sendMessage(chatId, message, {
+			parse_mode: 'HTML',
+			reply_markup: {
+				inline_keyboard: buttons,
+			},
+		});
 	}
 
 	async handleStatus(chatId) {
@@ -746,6 +755,248 @@ Usa /monitors para ver todos tus monitores.`);
 		} else {
 			await this.sendMessage(chatId, '❌ Responde <b>si</b> o <b>no</b>');
 		}
+	}
+
+	// ==================
+	// CALLBACK QUERIES
+	// ==================
+
+	async handleCallbackQuery(callbackQuery) {
+		const chatId = callbackQuery.message.chat.id;
+		const messageId = callbackQuery.message.message_id;
+		const data = callbackQuery.data;
+
+		try {
+			const [action, monitorId] = data.split('_');
+
+			switch (action) {
+				case 'pause':
+					await this.handlePauseCallback(chatId, messageId, monitorId, callbackQuery.id);
+					break;
+				case 'resume':
+					await this.handleResumeCallback(chatId, messageId, monitorId, callbackQuery.id);
+					break;
+				case 'delete':
+					await this.handleDeleteCallback(chatId, messageId, monitorId, callbackQuery.id);
+					break;
+				case 'confirmdelete':
+					await this.handleConfirmDeleteCallback(chatId, messageId, monitorId, callbackQuery.id);
+					break;
+				case 'canceldelete':
+					await this.handleCancelDeleteCallback(chatId, messageId, monitorId, callbackQuery.id);
+					break;
+				case 'check':
+					await this.handleCheckCallback(chatId, messageId, monitorId, callbackQuery.id);
+					break;
+				default:
+					await this.telegramService.bot.answerCallbackQuery(callbackQuery.id, {
+						text: '❌ Acción no reconocida',
+					});
+			}
+		} catch (error) {
+			console.error('❌ Error en callback query:', error);
+			await this.telegramService.bot.answerCallbackQuery(callbackQuery.id, {
+				text: '❌ Error procesando acción',
+			});
+		}
+	}
+
+	async handlePauseCallback(chatId, messageId, monitorId, callbackId) {
+		const monitor = await RouteMonitor.findById(monitorId);
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: '❌ Monitor no encontrado',
+			});
+			return;
+		}
+
+		monitor.isActive = false;
+		await monitor.save();
+
+		// Actualizar mensaje con nuevos botones
+		await this.updateMonitorCard(chatId, messageId, monitor);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: '⏸️ Monitor pausado',
+		});
+
+		console.log(`⏸️ Monitor pausado: ${monitor.name}`);
+	}
+
+	async handleResumeCallback(chatId, messageId, monitorId, callbackId) {
+		const monitor = await RouteMonitor.findById(monitorId);
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: '❌ Monitor no encontrado',
+			});
+			return;
+		}
+
+		monitor.isActive = true;
+		await monitor.save();
+
+		// Actualizar mensaje con nuevos botones
+		await this.updateMonitorCard(chatId, messageId, monitor);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: '▶️ Monitor reactivado',
+		});
+
+		console.log(`▶️ Monitor reactivado: ${monitor.name}`);
+	}
+
+	async handleDeleteCallback(chatId, messageId, monitorId, callbackId) {
+		const monitor = await RouteMonitor.findById(monitorId);
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: '❌ Monitor no encontrado',
+			});
+			return;
+		}
+
+		// Mostrar confirmación
+		const message = `⚠️ <b>¿Eliminar este monitor?</b>
+
+${monitor.name}
+${monitor.origin} → ${monitor.destination}
+
+Esta acción no se puede deshacer.`;
+
+		await this.telegramService.bot.editMessageText(message, {
+			chat_id: chatId,
+			message_id: messageId,
+			parse_mode: 'HTML',
+			reply_markup: {
+				inline_keyboard: [
+					[
+						{ text: '✅ Sí, eliminar', callback_data: `confirmdelete_${monitorId}` },
+						{ text: '❌ Cancelar', callback_data: `canceldelete_${monitorId}` },
+					],
+				],
+			},
+		});
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+	}
+
+	async handleConfirmDeleteCallback(chatId, messageId, monitorId, callbackId) {
+		const monitor = await RouteMonitor.findByIdAndDelete(monitorId);
+
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: '❌ Monitor no encontrado',
+			});
+			return;
+		}
+
+		await this.telegramService.bot.editMessageText(
+			`🗑️ <b>Monitor eliminado</b>\n\n${monitor.name}`,
+			{
+				chat_id: chatId,
+				message_id: messageId,
+				parse_mode: 'HTML',
+			}
+		);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: '🗑️ Monitor eliminado',
+		});
+
+		console.log(`🗑️ Monitor eliminado: ${monitor.name}`);
+	}
+
+	async handleCancelDeleteCallback(chatId, messageId, monitorId, callbackId) {
+		const monitor = await RouteMonitor.findById(monitorId);
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: '❌ Monitor no encontrado',
+			});
+			return;
+		}
+
+		// Restaurar card original
+		await this.updateMonitorCard(chatId, messageId, monitor);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: '↩️ Cancelado',
+		});
+	}
+
+	async handleCheckCallback(chatId, messageId, monitorId, callbackId) {
+		const monitor = await RouteMonitor.findById(monitorId);
+		if (!monitor) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: '❌ Monitor no encontrado',
+			});
+			return;
+		}
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId, {
+			text: '🔍 Buscando vuelos...',
+		});
+
+		// Importar y ejecutar búsqueda
+		const MonitoringService = require('./monitoring.service');
+		const monitoringService = new MonitoringService();
+
+		try {
+			await monitoringService.checkRoute(monitor);
+			await this.telegramService.bot.sendMessage(chatId,
+				`✅ Búsqueda completada para <b>${monitor.name}</b>`,
+				{ parse_mode: 'HTML' }
+			);
+		} catch (error) {
+			console.error('❌ Error en búsqueda manual:', error);
+			await this.telegramService.bot.sendMessage(chatId,
+				`❌ Error buscando vuelos para ${monitor.name}`,
+				{ parse_mode: 'HTML' }
+			);
+		}
+
+		console.log(`🔍 Búsqueda manual iniciada: ${monitor.name}`);
+	}
+
+	async updateMonitorCard(chatId, messageId, monitor) {
+		const status = monitor.isActive ? '✅ Activo' : '⏸️ Pausado';
+		const bestPrice = monitor.bestPrice?.amount
+			? `€${Math.round(monitor.bestPrice.amount)}`
+			: '-';
+		const lastChecked = monitor.lastChecked
+			? this.formatDate(monitor.lastChecked)
+			: 'Nunca';
+		const flightTypeIcon = monitor.flightType === 'roundtrip' ? '🔄' : '➡️';
+
+		const message = `${flightTypeIcon} <b>${monitor.name}</b>
+📍 ${monitor.origin} → ${monitor.destination}
+💰 Umbral: €${monitor.priceThreshold} | Mejor: ${bestPrice}
+${status} | Últ: ${lastChecked}`;
+
+		const buttons = [];
+
+		if (monitor.isActive) {
+			buttons.push([
+				{ text: '⏸️ Pausar', callback_data: `pause_${monitor._id}` },
+				{ text: '🔍 Buscar', callback_data: `check_${monitor._id}` },
+			]);
+		} else {
+			buttons.push([
+				{ text: '▶️ Reanudar', callback_data: `resume_${monitor._id}` },
+				{ text: '🔍 Buscar', callback_data: `check_${monitor._id}` },
+			]);
+		}
+
+		buttons.push([
+			{ text: '🗑️ Eliminar', callback_data: `delete_${monitor._id}` },
+		]);
+
+		await this.telegramService.bot.editMessageText(message, {
+			chat_id: chatId,
+			message_id: messageId,
+			parse_mode: 'HTML',
+			reply_markup: {
+				inline_keyboard: buttons,
+			},
+		});
 	}
 
 	// ==================
