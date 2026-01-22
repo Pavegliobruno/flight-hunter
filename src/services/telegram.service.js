@@ -170,19 +170,12 @@ class TelegramService {
 			!routeMonitor.bestPrice ||
 			flight.price.amount < routeMonitor.bestPrice.amount;
 
-		let priceChange = '';
-		if (
-			routeMonitor.bestPrice?.amount &&
-			!isNaN(routeMonitor.bestPrice.amount)
-		) {
-			const diff = flight.price.amount - routeMonitor.bestPrice.amount;
-			priceChange =
-				diff !== 0 ? ` (${diff > 0 ? '+' : ''}€${Math.round(diff)})` : '';
-		}
-
-		const title = `€${Math.round(flight.price.amount)} - ${flight.origin.city} → ${flight.destination.city}`;
-
 		if (flight.returnFlight) {
+			// Calcular días del viaje
+			const departureDate = new Date(flight.departure?.date);
+			const returnDate = new Date(flight.returnFlight.departure?.date);
+			const tripDays = Math.round((returnDate - departureDate) / (1000 * 60 * 60 * 24));
+
 			const outboundDuration =
 				this.calculateFlightDuration(flight.departure, flight.arrival) ||
 				this.formatDuration(flight.duration?.minutes || flight.duration?.total);
@@ -191,53 +184,47 @@ class TelegramService {
 				this.calculateReturnDuration(flight.returnFlight) ||
 				this.formatDuration(flight.returnFlight.duration?.minutes);
 
-			const outboundInfo = flight.isDirect
-				? `${outboundDuration} • Directo`
-				: `${outboundDuration} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
+			const outboundStops = flight.isDirect
+				? 'Directo'
+				: `${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
 
-			const returnInfo = flight.returnFlight.isDirect
-				? `${returnDuration} • Directo`
-				: `${returnDuration} • ${flight.returnFlight.numberOfStops || 0} escala${(flight.returnFlight.numberOfStops || 0) > 1 ? 's' : ''}`;
+			const returnStops = flight.returnFlight.isDirect
+				? 'Directo'
+				: `${flight.returnFlight.numberOfStops || 0} escala${(flight.returnFlight.numberOfStops || 0) > 1 ? 's' : ''}`;
 
-			return `🔥 <b>${title}</b>${priceChange}
+			return `<b>€${Math.round(flight.price.amount)}</b> - ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
 
-🛫 <b>IDA:</b> ${flight.origin.city} → ${flight.destination.city}
-📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
-⏱️ ${outboundInfo}
+<b>Ida:</b> ${this.formatDateShort(flight.departure?.date)} ${this.formatTime(flight.departure?.time)} · ${outboundDuration} · ${outboundStops}
+<b>Vuelta:</b> ${this.formatDateShort(flight.returnFlight.departure?.date)} ${this.formatTime(flight.returnFlight.departure?.time)} · ${returnDuration} · ${returnStops}
 
-🛬 <b>VUELTA:</b> ${flight.destination.city} → ${flight.origin.city}
-📅 <b>${this.formatDate(flight.returnFlight.departure?.date)}</b> a las <b>${this.formatTime(flight.returnFlight.departure?.time)}</b>
-⏱️ ${returnInfo}
-
-💰 <b>PRECIO TOTAL: €${Math.round(flight.price?.amount)}</b>${priceChange}
-
-${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
-🎯 <b>Umbral:</b> €${routeMonitor.priceThreshold}
-
-<i>Ruta: ${routeMonitor.name}</i>`;
+📅 <b>${tripDays} días</b> · Umbral: €${routeMonitor.priceThreshold}
+<i>${routeMonitor.name}</i>`;
 		} else {
 			// Solo ida
 			const flightDuration =
 				this.calculateFlightDuration(flight.departure, flight.arrival) ||
 				this.formatDuration(flight.duration?.minutes || flight.duration?.total);
 
-			const flightInfo = flight.isDirect
-				? `${flightDuration} • Directo`
-				: `${flightDuration} • ${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
+			const flightStops = flight.isDirect
+				? 'Directo'
+				: `${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
 
-			return `🔥 <b>${title}</b>${priceChange}
+			return `<b>€${Math.round(flight.price.amount)}</b> - ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
 
-🛫 ${flight.origin.city} → ${flight.destination.city}
-📅 <b>${this.formatDate(flight.departure?.date)}</b> a las <b>${this.formatTime(flight.departure?.time)}</b>
-⏱️ ${flightInfo}
+<b>Ida:</b> ${this.formatDateShort(flight.departure?.date)} ${this.formatTime(flight.departure?.time)} · ${flightDuration} · ${flightStops}
 
-💰 <b>PRECIO: €${Math.round(flight.price?.amount)}</b>${priceChange}
-
-${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
-🎯 <b>Umbral:</b> €${routeMonitor.priceThreshold}
-
-<i>Ruta: ${routeMonitor.name}</i>`;
+Umbral: €${routeMonitor.priceThreshold}
+<i>${routeMonitor.name}</i>`;
 		}
+	}
+
+	formatDateShort(date) {
+		if (!date) return 'N/A';
+		return new Date(date).toLocaleDateString('es-ES', {
+			weekday: 'short',
+			day: 'numeric',
+			month: 'short',
+		});
 	}
 
 	calculateFlightDuration(departure, arrival) {
