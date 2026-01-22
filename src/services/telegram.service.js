@@ -33,13 +33,10 @@ class TelegramService {
 		if (!this.bot || !this.commandsService) return;
 
 		this.bot.setMyCommands([
-			{command: 'start', description: 'Iniciar el bot y ver bienvenida'},
-			{command: 'help', description: 'Mostrar ayuda y comandos disponibles'},
-			{command: 'create', description: 'Crear un nuevo monitor de vuelos'},
-			{command: 'monitors', description: 'Ver todas las rutas monitoreadas'},
-			{command: 'status', description: 'Ver estado del sistema de monitoreo'},
-			{command: 'pause', description: 'Pausar un monitor específico'},
-			{command: 'resume', description: 'Reactivar un monitor pausado'},
+			{command: 'start', description: 'Iniciar el bot'},
+			{command: 'create', description: 'Crear nuevo monitor'},
+			{command: 'monitors', description: 'Ver y gestionar monitores'},
+			{command: 'help', description: 'Ayuda'},
 			{command: 'cancel', description: 'Cancelar operación en curso'},
 		]);
 

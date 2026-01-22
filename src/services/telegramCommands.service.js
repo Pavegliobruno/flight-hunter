@@ -8,9 +8,6 @@ class TelegramCommandsService {
 			'/start': this.handleStart.bind(this),
 			'/help': this.handleHelp.bind(this),
 			'/monitors': this.handleListMonitors.bind(this),
-			'/status': this.handleStatus.bind(this),
-			'/pause': this.handlePauseMonitor.bind(this),
-			'/resume': this.handleResumeMonitor.bind(this),
 			'/create': this.handleCreate.bind(this),
 			'/cancel': this.handleCancel.bind(this),
 		};
@@ -149,44 +146,28 @@ class TelegramCommandsService {
 	}
 
 	async handleStart(chatId) {
-		const message = `🛫 <b>¡Bienvenido al Monitor de Vuelos!</b>
+		const message = `<b>Monitor de Vuelos</b>
 
-Recibirás alertas automáticas cuando encuentre precios bajos en las rutas que configuraste.
+Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 
-<b>Comandos disponibles:</b>
-/create - ✨ Crear un nuevo monitor
-/monitors - Ver todas las rutas monitoreadas
-/status - Estado del sistema de monitoreo
-/pause [ID] - Pausar un monitor específico
-/resume [ID] - Reactivar un monitor pausado
-/help - Mostrar ayuda detallada
-
-<i>El sistema está monitoreando automáticamente cada 30 minutos.</i>`;
+<b>Comandos:</b>
+/create - Crear un nuevo monitor
+/monitors - Ver y gestionar monitores
+/help - Ayuda`;
 
 		await this.sendMessage(chatId, message);
 	}
 
 	async handleHelp(chatId) {
-		const message = `📋 <b>Comandos del Monitor de Vuelos</b>
+		const message = `<b>Comandos</b>
 
-<b>/create</b> - ✨ Crear nuevo monitor
-   Inicia un asistente paso a paso
+<b>/create</b> - Crear nuevo monitor
+Inicia un asistente paso a paso
 
-<b>/monitors</b> - Ver todas las rutas monitoreadas
-   Muestra ID, ruta, estado y mejor precio
+<b>/monitors</b> - Ver monitores
+Muestra todos tus monitores con opciones para pausar, reanudar, buscar o eliminar
 
-<b>/status</b> - Estado del sistema
-   Estadísticas de monitoreo y última verificación
-
-<b>/pause [ID]</b> - Pausar monitor
-   Ejemplo: /pause 507f1f77bcf86cd799439011
-
-<b>/resume [ID]</b> - Reactivar monitor
-   Ejemplo: /resume 507f1f77bcf86cd799439011
-
-<b>/cancel</b> - Cancelar operación en curso
-
-<b>💡 Tip:</b> Usa /monitors para obtener los IDs de tus rutas`;
+<b>/cancel</b> - Cancelar operación en curso`;
 
 		await this.sendMessage(chatId, message);
 	}
@@ -209,7 +190,7 @@ Recibirás alertas automáticas cuando encuentre precios bajos en las rutas que 
 			const activeCount = monitors.filter((m) => m.isActive).length;
 			const pausedCount = monitors.length - activeCount;
 
-			await this.sendMessage(chatId, `📊 <b>Total:</b> ${monitors.length} monitores (${activeCount} activos, ${pausedCount} pausados)`);
+			await this.sendMessage(chatId, `${monitors.length} monitores (${activeCount} activos, ${pausedCount} pausados)`);
 		} catch (error) {
 			console.error('❌ Error obteniendo monitores:', error);
 			await this.sendMessage(chatId, '❌ Error obteniendo la lista de monitores.');
@@ -217,38 +198,42 @@ Recibirás alertas automáticas cuando encuentre precios bajos en las rutas que 
 	}
 
 	async sendMonitorCard(chatId, monitor) {
-		const status = monitor.isActive ? '✅ Activo' : '⏸️ Pausado';
+		const status = monitor.isActive ? 'Activo' : 'Pausado';
 		const bestPrice = monitor.bestPrice?.amount
 			? `€${Math.round(monitor.bestPrice.amount)}`
 			: '-';
-		const lastChecked = monitor.lastChecked
-			? this.formatDate(monitor.lastChecked)
-			: 'Nunca';
-		const flightTypeIcon = monitor.flightType === 'roundtrip' ? '🔄' : '➡️';
 
-		const message = `${flightTypeIcon} <b>${monitor.name}</b>
-📍 ${monitor.origin} → ${monitor.destination}
-💰 Umbral: €${monitor.priceThreshold} | Mejor: ${bestPrice}
-${status} | Últ: ${lastChecked}`;
+		const outbound = monitor.outboundDateRange;
+		const inbound = monitor.inboundDateRange;
+		const idaStr = outbound ? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}` : '-';
+		const vueltaStr = inbound ? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}` : '';
+
+		let message = `<b>${monitor.name}</b>
+${monitor.origin} → ${monitor.destination}
+Ida: ${idaStr}`;
+
+		if (monitor.flightType === 'roundtrip' && vueltaStr) {
+			message += `\nVuelta: ${vueltaStr}`;
+		}
+
+		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
 
 		// Botones según estado
 		const buttons = [];
 
 		if (monitor.isActive) {
 			buttons.push([
-				{ text: '⏸️ Pausar', callback_data: `pause_${monitor._id}` },
-				{ text: '🔍 Buscar', callback_data: `check_${monitor._id}` },
+				{ text: 'Pausar', callback_data: `pause_${monitor._id}` },
+				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+				{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
 			]);
 		} else {
 			buttons.push([
-				{ text: '▶️ Reanudar', callback_data: `resume_${monitor._id}` },
-				{ text: '🔍 Buscar', callback_data: `check_${monitor._id}` },
+				{ text: 'Reanudar', callback_data: `resume_${monitor._id}` },
+				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+				{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
 			]);
 		}
-
-		buttons.push([
-			{ text: '🗑️ Eliminar', callback_data: `delete_${monitor._id}` },
-		]);
 
 		await this.telegramService.bot.sendMessage(chatId, message, {
 			parse_mode: 'HTML',
@@ -256,186 +241,6 @@ ${status} | Últ: ${lastChecked}`;
 				inline_keyboard: buttons,
 			},
 		});
-	}
-
-	async handleStatus(chatId) {
-		try {
-			const totalMonitors = await RouteMonitor.countDocuments();
-			const activeMonitors = await RouteMonitor.countDocuments({
-				isActive: true,
-			});
-			const pausedMonitors = totalMonitors - activeMonitors;
-
-			// Monitores verificados hoy
-			const todayStart = new Date();
-			todayStart.setHours(0, 0, 0, 0);
-			const checkedToday = await RouteMonitor.countDocuments({
-				lastChecked: {$gte: todayStart},
-			});
-
-			// Último monitor verificado
-			const lastChecked = await RouteMonitor.findOne({lastChecked: {$ne: null}})
-				.sort({lastChecked: -1})
-				.select('name lastChecked');
-
-			const message = `📊 <b>Estado del Sistema de Monitoreo</b>
-
-🔍 <b>Monitores:</b>
-   • Total: ${totalMonitors}
-   • Activos: ${activeMonitors}
-   • Pausados: ${pausedMonitors}
-
-📈 <b>Actividad de hoy:</b>
-   • Verificados: ${checkedToday}/${activeMonitors}
-
-⏰ <b>Última verificación:</b>
-   ${
-			lastChecked
-				? `${lastChecked.name}\n   ${this.formatDate(lastChecked.lastChecked)}`
-				: 'Ninguna aún'
-		}
-
-🤖 <b>Sistema:</b> ${process.env.ENABLE_MONITORING === 'true' ? '✅ Activo' : '⏸️ Pausado'}
-⏱️ <b>Frecuencia:</b> Cada ${process.env.MONITORING_INTERVAL || 30} minutos`;
-
-			await this.sendMessage(chatId, message);
-		} catch (error) {
-			console.error('❌ Error obteniendo estado:', error);
-			await this.sendMessage(
-				chatId,
-				'❌ Error obteniendo el estado del sistema.'
-			);
-		}
-	}
-
-	async handlePauseMonitor(chatId, args) {
-		if (args.length === 0) {
-			await this.sendMessage(
-				chatId,
-				'❌ Falta el ID del monitor.\n\nUso: /pause [ID]\nEjemplo: /pause 507f1f77bcf86cd799439011\n\nUsa /monitors para ver los IDs disponibles.'
-			);
-			return;
-		}
-
-		const monitorId = args[0];
-
-		try {
-			const monitor = await RouteMonitor.findById(monitorId);
-
-			if (!monitor) {
-				await this.sendMessage(
-					chatId,
-					'❌ Monitor no encontrado. Verifica el ID con /monitors'
-				);
-				return;
-			}
-
-			if (!monitor.isActive) {
-				await this.sendMessage(
-					chatId,
-					`⏸️ El monitor "${monitor.name}" ya está pausado.`
-				);
-				return;
-			}
-
-			monitor.isActive = false;
-			await monitor.save();
-
-			const message = `⏸️ <b>Monitor Pausado</b>
-
-📍 <b>Ruta:</b> ${monitor.name}
-🛫 ${monitor.origin} → ${monitor.destination}
-💰 Umbral: €${monitor.priceThreshold}
-
-El monitor dejará de verificar precios hasta que lo reactives con:
-<code>/resume ${monitorId}</code>`;
-
-			await this.sendMessage(chatId, message);
-
-			console.log(
-				`⏸️ Monitor pausado por Telegram: ${monitor.name} (${monitorId})`
-			);
-		} catch (error) {
-			console.error('❌ Error pausando monitor:', error);
-
-			if (error.name === 'CastError') {
-				await this.sendMessage(
-					chatId,
-					'❌ ID de monitor inválido. Verifica el formato con /monitors'
-				);
-			} else {
-				await this.sendMessage(
-					chatId,
-					'❌ Error pausando el monitor. Intenta nuevamente.'
-				);
-			}
-		}
-	}
-
-	async handleResumeMonitor(chatId, args) {
-		if (args.length === 0) {
-			await this.sendMessage(
-				chatId,
-				'❌ Falta el ID del monitor.\n\nUso: /resume [ID]\nEjemplo: /resume 507f1f77bcf86cd799439011\n\nUsa /monitors para ver los IDs disponibles.'
-			);
-			return;
-		}
-
-		const monitorId = args[0];
-
-		try {
-			const monitor = await RouteMonitor.findById(monitorId);
-
-			if (!monitor) {
-				await this.sendMessage(
-					chatId,
-					'❌ Monitor no encontrado. Verifica el ID con /monitors'
-				);
-				return;
-			}
-
-			if (monitor.isActive) {
-				await this.sendMessage(
-					chatId,
-					`✅ El monitor "${monitor.name}" ya está activo.`
-				);
-				return;
-			}
-
-			monitor.isActive = true;
-			await monitor.save();
-
-			const message = `✅ <b>Monitor Reactivado</b>
-
-📍 <b>Ruta:</b> ${monitor.name}
-🛫 ${monitor.origin} → ${monitor.destination}
-💰 Umbral: €${monitor.priceThreshold}
-
-El monitor volverá a verificar precios en el próximo ciclo de monitoreo.
-
-Para pausarlo nuevamente usa:
-<code>/pause ${monitorId}</code>`;
-
-			await this.sendMessage(chatId, message);
-
-			console.log(
-				`✅ Monitor reactivado por Telegram: ${monitor.name} (${monitorId})`
-			);
-		} catch (error) {
-			console.error('❌ Error reactivando monitor:', error);
-
-			if (error.name === 'CastError') {
-				await this.sendMessage(
-					chatId,
-					'❌ ID de monitor inválido. Verifica el formato con /monitors'
-				);
-			} else {
-				await this.sendMessage(
-					chatId,
-					'❌ Error reactivando el monitor. Intenta nuevamente.'
-				);
-			}
-		}
 	}
 
 	// ==================
@@ -817,10 +622,10 @@ Usa /monitors para ver todos tus monitores.`);
 		await this.updateMonitorCard(chatId, messageId, monitor);
 
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
-			text: '⏸️ Monitor pausado',
+			text: 'Monitor pausado',
 		});
 
-		console.log(`⏸️ Monitor pausado: ${monitor.name}`);
+		console.log(`Monitor pausado: ${monitor.name}`);
 	}
 
 	async handleResumeCallback(chatId, messageId, monitorId, callbackId) {
@@ -839,10 +644,10 @@ Usa /monitors para ver todos tus monitores.`);
 		await this.updateMonitorCard(chatId, messageId, monitor);
 
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
-			text: '▶️ Monitor reactivado',
+			text: 'Monitor reactivado',
 		});
 
-		console.log(`▶️ Monitor reactivado: ${monitor.name}`);
+		console.log(`Monitor reactivado: ${monitor.name}`);
 	}
 
 	async handleDeleteCallback(chatId, messageId, monitorId, callbackId) {
@@ -855,12 +660,10 @@ Usa /monitors para ver todos tus monitores.`);
 		}
 
 		// Mostrar confirmación
-		const message = `⚠️ <b>¿Eliminar este monitor?</b>
+		const message = `<b>¿Eliminar este monitor?</b>
 
 ${monitor.name}
-${monitor.origin} → ${monitor.destination}
-
-Esta acción no se puede deshacer.`;
+${monitor.origin} → ${monitor.destination}`;
 
 		await this.telegramService.bot.editMessageText(message, {
 			chat_id: chatId,
@@ -869,8 +672,8 @@ Esta acción no se puede deshacer.`;
 			reply_markup: {
 				inline_keyboard: [
 					[
-						{ text: '✅ Sí, eliminar', callback_data: `confirmdelete_${monitorId}` },
-						{ text: '❌ Cancelar', callback_data: `canceldelete_${monitorId}` },
+						{ text: 'Sí, eliminar', callback_data: `confirmdelete_${monitorId}` },
+						{ text: 'Cancelar', callback_data: `canceldelete_${monitorId}` },
 					],
 				],
 			},
@@ -890,7 +693,7 @@ Esta acción no se puede deshacer.`;
 		}
 
 		await this.telegramService.bot.editMessageText(
-			`🗑️ <b>Monitor eliminado</b>\n\n${monitor.name}`,
+			`<s>${monitor.name}</s>\nEliminado`,
 			{
 				chat_id: chatId,
 				message_id: messageId,
@@ -899,10 +702,10 @@ Esta acción no se puede deshacer.`;
 		);
 
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
-			text: '🗑️ Monitor eliminado',
+			text: 'Monitor eliminado',
 		});
 
-		console.log(`🗑️ Monitor eliminado: ${monitor.name}`);
+		console.log(`Monitor eliminado: ${monitor.name}`);
 	}
 
 	async handleCancelDeleteCallback(chatId, messageId, monitorId, callbackId) {
@@ -918,7 +721,7 @@ Esta acción no se puede deshacer.`;
 		await this.updateMonitorCard(chatId, messageId, monitor);
 
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
-			text: '↩️ Cancelado',
+			text: 'Cancelado',
 		});
 	}
 
@@ -932,7 +735,7 @@ Esta acción no se puede deshacer.`;
 		}
 
 		await this.telegramService.bot.answerCallbackQuery(callbackId, {
-			text: '🔍 Buscando vuelos...',
+			text: 'Buscando vuelos...',
 		});
 
 		// Importar y ejecutar búsqueda
@@ -942,52 +745,56 @@ Esta acción no se puede deshacer.`;
 		try {
 			await monitoringService.checkRoute(monitor);
 			await this.telegramService.bot.sendMessage(chatId,
-				`✅ Búsqueda completada para <b>${monitor.name}</b>`,
+				`Búsqueda completada: <b>${monitor.name}</b>`,
 				{ parse_mode: 'HTML' }
 			);
 		} catch (error) {
-			console.error('❌ Error en búsqueda manual:', error);
+			console.error('Error en búsqueda manual:', error);
 			await this.telegramService.bot.sendMessage(chatId,
-				`❌ Error buscando vuelos para ${monitor.name}`,
+				`Error buscando vuelos para ${monitor.name}`,
 				{ parse_mode: 'HTML' }
 			);
 		}
 
-		console.log(`🔍 Búsqueda manual iniciada: ${monitor.name}`);
+		console.log(`Búsqueda manual iniciada: ${monitor.name}`);
 	}
 
 	async updateMonitorCard(chatId, messageId, monitor) {
-		const status = monitor.isActive ? '✅ Activo' : '⏸️ Pausado';
+		const status = monitor.isActive ? 'Activo' : 'Pausado';
 		const bestPrice = monitor.bestPrice?.amount
 			? `€${Math.round(monitor.bestPrice.amount)}`
 			: '-';
-		const lastChecked = monitor.lastChecked
-			? this.formatDate(monitor.lastChecked)
-			: 'Nunca';
-		const flightTypeIcon = monitor.flightType === 'roundtrip' ? '🔄' : '➡️';
 
-		const message = `${flightTypeIcon} <b>${monitor.name}</b>
-📍 ${monitor.origin} → ${monitor.destination}
-💰 Umbral: €${monitor.priceThreshold} | Mejor: ${bestPrice}
-${status} | Últ: ${lastChecked}`;
+		const outbound = monitor.outboundDateRange;
+		const inbound = monitor.inboundDateRange;
+		const idaStr = outbound ? `${this.formatShortDate(outbound.startDate)} - ${this.formatShortDate(outbound.endDate)}` : '-';
+		const vueltaStr = inbound ? `${this.formatShortDate(inbound.startDate)} - ${this.formatShortDate(inbound.endDate)}` : '';
+
+		let message = `<b>${monitor.name}</b>
+${monitor.origin} → ${monitor.destination}
+Ida: ${idaStr}`;
+
+		if (monitor.flightType === 'roundtrip' && vueltaStr) {
+			message += `\nVuelta: ${vueltaStr}`;
+		}
+
+		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
 
 		const buttons = [];
 
 		if (monitor.isActive) {
 			buttons.push([
-				{ text: '⏸️ Pausar', callback_data: `pause_${monitor._id}` },
-				{ text: '🔍 Buscar', callback_data: `check_${monitor._id}` },
+				{ text: 'Pausar', callback_data: `pause_${monitor._id}` },
+				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+				{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
 			]);
 		} else {
 			buttons.push([
-				{ text: '▶️ Reanudar', callback_data: `resume_${monitor._id}` },
-				{ text: '🔍 Buscar', callback_data: `check_${monitor._id}` },
+				{ text: 'Reanudar', callback_data: `resume_${monitor._id}` },
+				{ text: 'Buscar', callback_data: `check_${monitor._id}` },
+				{ text: 'Eliminar', callback_data: `delete_${monitor._id}` },
 			]);
 		}
-
-		buttons.push([
-			{ text: '🗑️ Eliminar', callback_data: `delete_${monitor._id}` },
-		]);
 
 		await this.telegramService.bot.editMessageText(message, {
 			chat_id: chatId,
@@ -1033,6 +840,15 @@ ${status} | Últ: ${lastChecked}`;
 				minute: '2-digit',
 			});
 		}
+	}
+
+	formatShortDate(dateStr) {
+		if (!dateStr) return '-';
+		const date = new Date(dateStr);
+		return date.toLocaleDateString('es-ES', {
+			day: '2-digit',
+			month: 'short',
+		});
 	}
 }
 
