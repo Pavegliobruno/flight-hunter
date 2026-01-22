@@ -69,11 +69,14 @@ class TelegramService {
 
 				// Si no es comando, verificar conversación activa
 				if (this.commandsService) {
+					console.log(`🔍 Verificando conversación para: "${msg.text?.substring(0, 30)}"`);
 					const handled = await this.commandsService.handleMessage(msg);
+					console.log(`🔍 handleMessage retornó: ${handled}`);
 					if (handled) return;
 				}
 
 				// Solo enviar saludo si no hay conversación activa
+				console.log(`⚠️ Sin conversación - enviando saludo`);
 				this.bot.sendMessage(
 					msg.chat.id,
 					'Usa /help para ver los comandos disponibles.'
