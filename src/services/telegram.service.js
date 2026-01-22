@@ -102,6 +102,9 @@ class TelegramService {
 				bookingUrl = 'https://kiwi.com' + bookingUrl;
 			}
 
+			// Generar links alternativos
+			const altLinks = this.generateAlternativeLinks(flight);
+
 			const options = {
 				parse_mode: 'HTML',
 				disable_web_page_preview: false,
@@ -109,12 +112,22 @@ class TelegramService {
 					inline_keyboard: [
 						[
 							{
-								text: '🔗 Ver en Kiwi',
+								text: '🥝 Kiwi',
 								url: bookingUrl,
 							},
 							{
-								text: '📊 Estadísticas',
-								callback_data: `stats_${routeMonitor._id}`,
+								text: '🔵 Skyscanner',
+								url: altLinks.skyscanner,
+							},
+						],
+						[
+							{
+								text: '🔍 Google',
+								url: altLinks.googleFlights,
+							},
+							{
+								text: '🟠 Kayak',
+								url: altLinks.kayak,
 							},
 						],
 						[
@@ -318,6 +331,52 @@ ${isNewLow ? '🏆 <b>¡NUEVO PRECIO MÍNIMO!</b>' : ''}
 			month: 'short',
 			day: 'numeric',
 		});
+	}
+
+	generateAlternativeLinks(flight) {
+		const origin = flight.origin.code;
+		const destination = flight.destination.code;
+		const departureDate = new Date(flight.departure.date);
+		const returnDate = flight.returnFlight?.departure?.date
+			? new Date(flight.returnFlight.departure.date)
+			: null;
+
+		// Formato YYMMDD para Skyscanner
+		const formatSkyscanner = (date) => {
+			const yy = date.getFullYear().toString().slice(-2);
+			const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+			const dd = date.getDate().toString().padStart(2, '0');
+			return `${yy}${mm}${dd}`;
+		};
+
+		// Formato YYYY-MM-DD para Google y Kayak
+		const formatISO = (date) => {
+			return date.toISOString().split('T')[0];
+		};
+
+		const depSkyscanner = formatSkyscanner(departureDate);
+		const depISO = formatISO(departureDate);
+
+		const links = {};
+
+		if (returnDate) {
+			// Ida y vuelta
+			const retSkyscanner = formatSkyscanner(returnDate);
+			const retISO = formatISO(returnDate);
+
+			links.skyscanner = `https://www.skyscanner.com/transport/flights/${origin.toLowerCase()}/${destination.toLowerCase()}/${depSkyscanner}/${retSkyscanner}/`;
+			links.googleFlights = `https://www.google.com/travel/flights?q=Flights+from+${origin}+to+${destination}+on+${depISO}+return+${retISO}`;
+			links.kayak = `https://www.kayak.com/flights/${origin}-${destination}/${depISO}/${retISO}?sort=bestflight_a`;
+			links.momondo = `https://www.momondo.com/flight-search/${origin}-${destination}/${depISO}/${retISO}`;
+		} else {
+			// Solo ida
+			links.skyscanner = `https://www.skyscanner.com/transport/flights/${origin.toLowerCase()}/${destination.toLowerCase()}/${depSkyscanner}/`;
+			links.googleFlights = `https://www.google.com/travel/flights?q=Flights+from+${origin}+to+${destination}+on+${depISO}`;
+			links.kayak = `https://www.kayak.com/flights/${origin}-${destination}/${depISO}?sort=bestflight_a`;
+			links.momondo = `https://www.momondo.com/flight-search/${origin}-${destination}/${depISO}`;
+		}
+
+		return links;
 	}
 
 	async sendMonitoringStatus(stats) {
