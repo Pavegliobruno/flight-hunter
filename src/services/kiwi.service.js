@@ -551,7 +551,6 @@ class KiwiService {
 				params: {
 					term: term,
 					limit: 8,
-					locale: 'es-ES',
 					active_only: true,
 				},
 				timeout: 10000,
