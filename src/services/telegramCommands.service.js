@@ -1,6 +1,7 @@
 // src/services/telegramCommands.service.js
 const RouteMonitor = require('../models/routeMonitor.models');
 const User = require('../models/user.model');
+const KiwiService = require('./kiwi.service');
 
 class TelegramCommandsService {
 	constructor(telegramService) {
@@ -18,82 +19,8 @@ class TelegramCommandsService {
 		// Estado de conversación para cada chat
 		this.conversationState = new Map();
 
-		// Aeropuertos disponibles organizados por región
-		this.availableAirports = {
-			'🇦🇷 Argentina': {
-				BUE: 'Buenos Aires (todos)',
-				EZE: 'Ezeiza',
-				AEP: 'Aeroparque',
-				COR: 'Córdoba',
-				ROS: 'Rosario',
-				MDZ: 'Mendoza',
-				IGU: 'Iguazú',
-				USH: 'Ushuaia',
-				BRC: 'Bariloche',
-				FTE: 'El Calafate',
-			},
-			'🇪🇸 España': {
-				MAD: 'Madrid',
-				BCN: 'Barcelona',
-				VLC: 'Valencia',
-				SVQ: 'Sevilla',
-				BIO: 'Bilbao',
-				PMI: 'Palma de Mallorca',
-				LPA: 'Las Palmas',
-				TFS: 'Tenerife Sur',
-			},
-			'🇪🇺 Europa': {
-				BER: 'Berlín',
-				VIE: 'Viena',
-				CDG: 'París CDG',
-				LHR: 'Londres Heathrow',
-				FCO: 'Roma Fiumicino',
-				AMS: 'Ámsterdam',
-				FRA: 'Frankfurt',
-				MUC: 'Múnich',
-				ZUR: 'Zúrich',
-				LIS: 'Lisboa',
-				MXP: 'Milán Malpensa',
-				BRI: 'Bari',
-				IST: 'Estambul',
-			},
-			'🌎 Américas': {
-				MIA: 'Miami',
-				JFK: 'Nueva York JFK',
-				LAX: 'Los Ángeles',
-				MEX: 'Ciudad de México',
-				GRU: 'São Paulo',
-				GIG: 'Río de Janeiro',
-				SCL: 'Santiago de Chile',
-				LIM: 'Lima',
-				BOG: 'Bogotá',
-				CUN: 'Cancún',
-			},
-			'🌏 Asia': {
-				NRT: 'Tokio Narita',
-				HND: 'Tokio Haneda',
-				KIX: 'Osaka Kansai',
-				ICN: 'Seúl Incheon',
-				PVG: 'Shanghái',
-				PEK: 'Pekín',
-				HKG: 'Hong Kong',
-				SIN: 'Singapur',
-				BKK: 'Bangkok',
-			},
-			'🌏 Oceanía': {
-				SYD: 'Sídney',
-				MEL: 'Melbourne',
-				AKL: 'Auckland',
-			},
-		};
-
-		// Lista plana de códigos válidos
-		this.validAirportCodes = new Set();
-		for (const region of Object.values(this.availableAirports)) {
-			for (const code of Object.keys(region)) {
-				this.validAirportCodes.add(code);
-			}
-		}
+		// Servicio de Kiwi para búsqueda de ubicaciones
+		this.kiwiService = new KiwiService();
 	}
 
 	async handleCommand(msg, match) {
@@ -463,32 +390,16 @@ Ida: ${idaStr}`;
 			data: {},
 		});
 
-		const airportList = this.formatAirportList();
-
 		const message = `✈️ <b>Crear Nuevo Monitor</b>
 
 Vamos a configurar un nuevo monitor de vuelos paso a paso.
 
 <b>Paso 1/6:</b> ¿Cuál es el <b>origen</b>?
-Enviá el código de 3 letras (ej: BER, EZE, MAD)
-
-${airportList}
+Escribí el nombre de la ciudad o código IATA (ej: Berlin, Madrid, EZE)
 
 <i>Escribe /cancel para cancelar.</i>`;
 
 		await this.sendMessage(chatId, message);
-	}
-
-	formatAirportList() {
-		let list = '<b>Aeropuertos disponibles:</b>\n';
-		for (const [region, airports] of Object.entries(this.availableAirports)) {
-			list += `\n${region}\n`;
-			const codes = Object.entries(airports)
-				.map(([code, name]) => `<code>${code}</code> ${name}`)
-				.join(' • ');
-			list += codes + '\n';
-		}
-		return list;
 	}
 
 	async handleCancel(chatId) {
@@ -506,9 +417,15 @@ ${airportList}
 
 		switch (state.step) {
 			case 'origin':
+			case 'origin_select':
+				// Si está en origin_select y escribe texto, buscar de nuevo
+				state.step = 'origin';
 				await this.handleOriginStep(chatId, text, state);
 				break;
 			case 'destination':
+			case 'destination_select':
+				// Si está en destination_select y escribe texto, buscar de nuevo
+				state.step = 'destination';
 				await this.handleDestinationStep(chatId, text, state);
 				break;
 			case 'outbound_dates':
@@ -542,57 +459,88 @@ ${airportList}
 	}
 
 	async handleOriginStep(chatId, text, state) {
-		const origin = text.toUpperCase().trim();
+		const searchTerm = text.trim();
 
-		if (!this.validAirportCodes.has(origin)) {
-			await this.sendMessage(chatId, `❌ Código <b>${origin}</b> no disponible.
+		// Buscar ubicaciones en la API de Kiwi
+		const locations = await this.kiwiService.searchLocations(searchTerm);
 
-Elegí uno de la lista o escribí /cancel para cancelar.`);
+		if (locations.length === 0) {
+			await this.sendMessage(chatId, `❌ No se encontraron resultados para "<b>${searchTerm}</b>".
+
+Intentá con otro nombre de ciudad o código IATA.`);
 			return;
 		}
 
-		const originName = this.getAirportName(origin);
-		state.data.origin = origin;
-		state.step = 'destination';
-		this.conversationState.set(chatId, state);
+		// Si solo hay un resultado, usarlo directamente
+		if (locations.length === 1) {
+			const loc = locations[0];
+			state.data.origin = loc.id;
+			state.data.originCode = loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase() || searchTerm.toUpperCase();
+			state.data.originName = loc.name;
+			state.step = 'destination';
+			this.conversationState.set(chatId, state);
 
-		const airportList = this.formatAirportList();
-
-		await this.sendMessage(chatId, `✅ Origen: <b>${origin}</b> (${originName})
+			await this.sendMessage(chatId, `✅ Origen: <b>${state.data.originName}</b> (${state.data.originCode})
 
 <b>Paso 2/6:</b> ¿Cuál es el <b>destino</b>?
-
-${airportList}`);
-	}
-
-	getAirportName(code) {
-		for (const airports of Object.values(this.availableAirports)) {
-			if (airports[code]) return airports[code];
+Escribí el nombre de la ciudad o código IATA.`);
+			return;
 		}
-		return code;
+
+		// Guardar estado para esperar selección
+		state.step = 'origin_select';
+		state.data.pendingLocations = locations;
+		this.conversationState.set(chatId, state);
+
+		// Mostrar opciones con inline keyboard
+		const keyboard = locations.map((loc, index) => {
+			const displayCode = loc.code || '';
+			const displayName = loc.name + (displayCode ? ` (${displayCode})` : '');
+			const locType = loc.type === 'city' ? 'Todos los aeropuertos' : loc.type === 'airport' ? 'Aeropuerto' : '';
+			return [{
+				text: `${displayName}${locType ? ' - ' + locType : ''}`,
+				callback_data: `origin_select_${index}`
+			}];
+		});
+
+		await this.telegramService.bot.sendMessage(chatId,
+			`Encontré ${locations.length} opciones para "<b>${searchTerm}</b>".\n\nSeleccioná el origen:`, {
+			parse_mode: 'HTML',
+			reply_markup: { inline_keyboard: keyboard }
+		});
 	}
 
 	async handleDestinationStep(chatId, text, state) {
-		const destination = text.toUpperCase().trim();
+		const searchTerm = text.trim();
 
-		if (!this.validAirportCodes.has(destination)) {
-			await this.sendMessage(chatId, `❌ Código <b>${destination}</b> no disponible.
+		// Buscar ubicaciones en la API de Kiwi
+		const locations = await this.kiwiService.searchLocations(searchTerm);
 
-Elegí uno de la lista o escribí /cancel para cancelar.`);
+		if (locations.length === 0) {
+			await this.sendMessage(chatId, `❌ No se encontraron resultados para "<b>${searchTerm}</b>".
+
+Intentá con otro nombre de ciudad o código IATA.`);
 			return;
 		}
 
-		if (destination === state.data.origin) {
-			await this.sendMessage(chatId, '❌ El destino no puede ser igual al origen.');
-			return;
-		}
+		// Si solo hay un resultado, usarlo directamente
+		if (locations.length === 1) {
+			const loc = locations[0];
+			const destCode = loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase() || searchTerm.toUpperCase();
 
-		const destinationName = this.getAirportName(destination);
-		state.data.destination = destination;
-		state.step = 'outbound_dates';
-		this.conversationState.set(chatId, state);
+			// Verificar que no sea igual al origen
+			if (loc.id === state.data.origin) {
+				await this.sendMessage(chatId, '❌ El destino no puede ser igual al origen.');
+				return;
+			}
 
-		await this.sendMessage(chatId, `✅ Destino: <b>${destination}</b> (${destinationName})
+			state.data.destination = loc.id;
+			state.data.destinationCode = destCode;
+			state.data.destinationName = loc.name;
+			state.step = 'outbound_dates';
+			this.conversationState.set(chatId, state);
+
+			await this.sendMessage(chatId, `✅ Destino: <b>${state.data.destinationName}</b> (${state.data.destinationCode})
 
 <b>Paso 3/6:</b> ¿Fechas de <b>ida</b>?
 Enviá el rango de fechas en formato:
@@ -600,6 +548,30 @@ Enviá el rango de fechas en formato:
 
 Ejemplo: <code>2026-05-01 2026-05-15</code>
 (o una sola fecha si es fija)`);
+			return;
+		}
+
+		// Guardar estado para esperar selección
+		state.step = 'destination_select';
+		state.data.pendingLocations = locations;
+		this.conversationState.set(chatId, state);
+
+		// Mostrar opciones con inline keyboard
+		const keyboard = locations.map((loc, index) => {
+			const displayCode = loc.code || '';
+			const displayName = loc.name + (displayCode ? ` (${displayCode})` : '');
+			const locType = loc.type === 'city' ? 'Todos los aeropuertos' : loc.type === 'airport' ? 'Aeropuerto' : '';
+			return [{
+				text: `${displayName}${locType ? ' - ' + locType : ''}`,
+				callback_data: `dest_select_${index}`
+			}];
+		});
+
+		await this.telegramService.bot.sendMessage(chatId,
+			`Encontré ${locations.length} opciones para "<b>${searchTerm}</b>".\n\nSeleccioná el destino:`, {
+			parse_mode: 'HTML',
+			reply_markup: { inline_keyboard: keyboard }
+		});
 	}
 
 	async handleOutboundDatesStep(chatId, text, state) {
@@ -714,9 +686,12 @@ Ejemplo: <code>2</code>
 		const stopsMsg = state.data.maxStops === null ? 'Sin límite' : state.data.maxStops;
 		const flightTypeMsg = state.data.flightType === 'oneway' ? 'Solo ida' : 'Ida y vuelta';
 
+		const originDisplay = `${state.data.originName} (${state.data.originCode})`;
+		const destDisplay = `${state.data.destinationName} (${state.data.destinationCode})`;
+
 		const summary = `📋 <b>Resumen del Monitor</b>
 
-🛫 <b>Ruta:</b> ${state.data.origin} → ${state.data.destination}
+🛫 <b>Ruta:</b> ${originDisplay} → ${destDisplay}
 📅 <b>Ida:</b> ${state.data.outboundDateRange.startDate} a ${state.data.outboundDateRange.endDate}
 ${state.data.flightType === 'roundtrip' ? `📅 <b>Vuelta:</b> ${state.data.inboundDateRange.startDate} a ${state.data.inboundDateRange.endDate}` : ''}
 ✈️ <b>Tipo:</b> ${flightTypeMsg}
@@ -733,13 +708,10 @@ ${state.data.flightType === 'roundtrip' ? `📅 <b>Vuelta:</b> ${state.data.inbo
 
 		if (input === 'si' || input === 'sí' || input === 'yes' || input === 's') {
 			try {
-				const originName = this.getAirportName(state.data.origin);
-				const destName = this.getAirportName(state.data.destination);
-
 				const monitorData = {
-					name: `${originName} → ${destName}`,
-					origin: state.data.origin,
-					destination: state.data.destination,
+					name: `${state.data.originName} → ${state.data.destinationName}`,
+					origin: state.data.origin, // Kiwi ID (ej: City:berlin_de)
+					destination: state.data.destination, // Kiwi ID
 					priceThreshold: state.data.priceThreshold,
 					flightType: state.data.flightType,
 					outboundDateRange: state.data.outboundDateRange,
@@ -762,7 +734,7 @@ ${state.data.flightType === 'roundtrip' ? `📅 <b>Vuelta:</b> ${state.data.inbo
 
 				await this.sendMessage(chatId, `✅ <b>Monitor creado</b>
 
-${monitor.origin} → ${monitor.destination} · Umbral €${monitor.priceThreshold}
+${state.data.originName} (${state.data.originCode}) → ${state.data.destinationName} (${state.data.destinationCode}) · Umbral €${monitor.priceThreshold}
 
 Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por debajo de tu umbral.`);
 
@@ -813,6 +785,18 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 			}
 			if (data === 'noop') {
 				await this.telegramService.bot.answerCallbackQuery(callbackQuery.id);
+				return;
+			}
+
+			// Handlers para selección de aeropuertos
+			if (data.startsWith('origin_select_')) {
+				const index = parseInt(data.replace('origin_select_', ''));
+				await this.handleOriginSelectCallback(chatId, index, callbackQuery.id);
+				return;
+			}
+			if (data.startsWith('dest_select_')) {
+				const index = parseInt(data.replace('dest_select_', ''));
+				await this.handleDestSelectCallback(chatId, index, callbackQuery.id);
 				return;
 			}
 
@@ -881,6 +865,86 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 				text: 'Error procesando acción',
 			});
 		}
+	}
+
+	async handleOriginSelectCallback(chatId, index, callbackId) {
+		const state = this.conversationState.get(chatId.toString());
+
+		if (!state || state.step !== 'origin_select' || !state.data.pendingLocations) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Sesión expirada. Usa /create para empezar de nuevo.',
+			});
+			return;
+		}
+
+		const loc = state.data.pendingLocations[index];
+		if (!loc) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Opción no válida',
+			});
+			return;
+		}
+
+		// Guardar origen seleccionado
+		state.data.origin = loc.id;
+		state.data.originCode = loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase();
+		state.data.originName = loc.name;
+		delete state.data.pendingLocations;
+		state.step = 'destination';
+		this.conversationState.set(chatId.toString(), state);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+
+		await this.sendMessage(chatId, `✅ Origen: <b>${state.data.originName}</b> (${state.data.originCode})
+
+<b>Paso 2/6:</b> ¿Cuál es el <b>destino</b>?
+Escribí el nombre de la ciudad o código IATA.`);
+	}
+
+	async handleDestSelectCallback(chatId, index, callbackId) {
+		const state = this.conversationState.get(chatId.toString());
+
+		if (!state || state.step !== 'destination_select' || !state.data.pendingLocations) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Sesión expirada. Usa /create para empezar de nuevo.',
+			});
+			return;
+		}
+
+		const loc = state.data.pendingLocations[index];
+		if (!loc) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Opción no válida',
+			});
+			return;
+		}
+
+		// Verificar que no sea igual al origen
+		if (loc.id === state.data.origin) {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'El destino no puede ser igual al origen',
+			});
+			return;
+		}
+
+		// Guardar destino seleccionado
+		state.data.destination = loc.id;
+		state.data.destinationCode = loc.code || loc.id.split(':')[1]?.split('_')[0]?.toUpperCase();
+		state.data.destinationName = loc.name;
+		delete state.data.pendingLocations;
+		state.step = 'outbound_dates';
+		this.conversationState.set(chatId.toString(), state);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+
+		await this.sendMessage(chatId, `✅ Destino: <b>${state.data.destinationName}</b> (${state.data.destinationCode})
+
+<b>Paso 3/6:</b> ¿Fechas de <b>ida</b>?
+Enviá el rango de fechas en formato:
+<code>YYYY-MM-DD YYYY-MM-DD</code>
+
+Ejemplo: <code>2026-05-01 2026-05-15</code>
+(o una sola fecha si es fija)`);
 	}
 
 	async handleApproveUserCallback(chatId, messageId, userChatId, callbackId) {

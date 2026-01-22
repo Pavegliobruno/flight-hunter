@@ -442,6 +442,12 @@ class KiwiService {
 	}
 
 	formatAirportCode(code) {
+		// Si ya es un ID de Kiwi (contiene ':'), devolverlo directamente
+		if (code && code.includes(':')) {
+			console.log(`📍 ID Kiwi directo: ${code}`);
+			return code;
+		}
+
 		const cityMapping = {
 			// EUROPA
 			VIE: 'City:vienna_at',
@@ -537,7 +543,25 @@ class KiwiService {
 		return `City:${code.toLowerCase()}_de`;
 	}
 
-	// Resto de métodos igual...
+	async searchLocations(term) {
+		try {
+			const response = await axios.get('https://api.skypicker.com/locations', {
+				params: {
+					term: term,
+					location_types: 'airport,city',
+					limit: 5,
+					locale: 'es-ES',
+				},
+				headers: { 'Accept-Encoding': 'gzip' },
+				timeout: 10000,
+			});
+			return response.data.locations || [];
+		} catch (error) {
+			console.error('❌ Error buscando ubicaciones:', error.message);
+			return [];
+		}
+	}
+
 	generateSessionId() {
 		return (
 			Math.random().toString(36).substring(2, 15) +
