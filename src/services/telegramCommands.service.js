@@ -1385,11 +1385,33 @@ Usa /help para ver los comandos disponibles.
 		usersWithMonitors.sort((a, b) => b.monitorCount - a.monitorCount);
 
 		if (usersWithMonitors.length === 0) {
+			// Obtener conteos para mostrar en el mensaje
+			const allUsers = await User.find({isAdmin: false});
+			const activeCount = allUsers.filter((u) => u.status === 'active').length;
+			const pendingCount = allUsers.filter((u) => u.status === 'pending').length;
+			const blockedCount = allUsers.filter((u) => u.status === 'blocked').length;
+
+			const filterLabel = {
+				all: 'Todos',
+				active: 'Activos',
+				pending: 'Pendientes',
+				blocked: 'Bloqueados',
+			}[filter];
+
+			const filterButtons = [
+				{text: filter === 'all' ? '• Todos' : 'Todos', callback_data: 'usersfilter_all_0'},
+				{text: filter === 'active' ? '• Activos' : 'Activos', callback_data: 'usersfilter_active_0'},
+				{text: filter === 'pending' ? '• Pend.' : 'Pend.', callback_data: 'usersfilter_pending_0'},
+				{text: filter === 'blocked' ? '• Bloq.' : 'Bloq.', callback_data: 'usersfilter_blocked_0'},
+			];
+
 			await this.telegramService.bot.editMessageText(
-				'No hay usuarios con ese filtro.',
+				`<b>Usuarios</b> (${filterLabel}: 0)\n━━━━━━━━━━━━━━━━\n<i>No hay usuarios con este filtro</i>\n\n<i>Total: ${allUsers.length} (${activeCount} activos, ${pendingCount} pend., ${blockedCount} bloq.)</i>`,
 				{
 					chat_id: chatId,
 					message_id: messageId,
+					parse_mode: 'HTML',
+					reply_markup: {inline_keyboard: [filterButtons]},
 				}
 			);
 			return;
