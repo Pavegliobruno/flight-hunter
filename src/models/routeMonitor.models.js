@@ -169,11 +169,11 @@ routeMonitorSchema.methods.generateKiwiApiFilters = function () {
 		allowChangeInboundDestination: true,
 		allowChangeInboundSource: true,
 		allowDifferentStationConnection: false,
-		enableSelfTransfer: false,
+		enableSelfTransfer: true,
 		enableThrowAwayTicketing: true,
 		enableTrueHiddenCity: true,
 		transportTypes: ['FLIGHT'],
-		contentProviders: ['KIWI'],
+		contentProviders: ['KIWI', 'FRESH'],
 		flightsApiLimit: 25,
 		limit: 20,
 	};

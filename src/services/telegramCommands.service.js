@@ -13,6 +13,7 @@ class TelegramCommandsService {
 			'/create': this.handleCreate.bind(this),
 			'/cancel': this.handleCancel.bind(this),
 			'/users': this.handleUsers.bind(this),
+			'/status': this.handleStatus.bind(this),
 		};
 
 		this.adminChatId = process.env.TELEGRAM_CHAT_ID;
@@ -58,8 +59,8 @@ No tenés acceso a este bot.
 				return;
 			}
 
-			// Comando /users solo para admin
-			if (command === '/users' && !user.isAdmin) {
+			// Comandos solo para admin
+			if ((command === '/users' || command === '/status') && !user.isAdmin) {
 				await this.sendMessage(chatId, 'No tenés permisos para este comando.');
 				return;
 			}
@@ -207,12 +208,84 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 <b>/cancel</b> - Cancelar operación en curso`;
 
 		if (isAdmin) {
-			message += `\n\n<b>Admin:</b>\n<b>/users</b> - Gestionar usuarios`;
+			message += `\n\n<b>Admin:</b>
+<b>/users</b> - Gestionar usuarios
+<b>/status</b> - Estado del sistema`;
 		}
 
 		message += `\n\n<i>Dudas o sugerencias? Contacta a @pavegliobruno</i>`;
 
 		await this.sendMessage(chatId, message);
+	}
+
+	async handleStatus(chatId) {
+		const user = await User.findOne({chatId: chatId.toString()});
+
+		if (!user?.isAdmin) {
+			await this.sendMessage(chatId, 'No tenés permisos para este comando.');
+			return;
+		}
+
+		try {
+			// Estadísticas de monitores
+			const activeRoutes = await RouteMonitor.countDocuments({isActive: true});
+			const totalRoutes = await RouteMonitor.countDocuments({});
+
+			// Estadísticas de usuarios
+			const totalUsers = await User.countDocuments({status: 'active'});
+			const pendingUsers = await User.countDocuments({status: 'pending'});
+
+			// Usuarios únicos con alertas
+			const monitorsWithAlerts = await RouteMonitor.find({
+				'stats.alertsSent': {$gt: 0},
+			}).distinct('notifications.telegram.chatId');
+			const usersWithAlerts = monitorsWithAlerts.length;
+
+			// Total de alertas enviadas
+			const alertsAggregation = await RouteMonitor.aggregate([
+				{$group: {_id: null, totalAlerts: {$sum: '$stats.alertsSent'}}},
+			]);
+			const totalAlertsSent = alertsAggregation[0]?.totalAlerts || 0;
+
+			// Último chequeo
+			const lastCheckedMonitor = await RouteMonitor.findOne({
+				lastChecked: {$ne: null},
+			}).sort({lastChecked: -1});
+			const lastCheck = lastCheckedMonitor?.lastChecked;
+
+			const message = `📊 <b>Estado del Sistema</b>
+
+<b>Monitoreo</b>
+🔍 Rutas activas: ${activeRoutes}/${totalRoutes}
+⏰ Último chequeo: ${lastCheck ? this.formatTimeAgo(lastCheck) : 'N/A'}
+
+<b>Usuarios</b>
+👥 Usuarios activos: ${totalUsers}
+⏳ Pendientes: ${pendingUsers}
+📬 Con alertas: ${usersWithAlerts}
+
+<b>Alertas</b>
+📩 Total enviadas: ${totalAlertsSent}
+
+<i>${new Date().toLocaleString('es-ES')}</i>`;
+
+			await this.sendMessage(chatId, message);
+		} catch (error) {
+			console.error('Error en handleStatus:', error);
+			await this.sendMessage(chatId, 'Error obteniendo estado del sistema.');
+		}
+	}
+
+	formatTimeAgo(date) {
+		const now = new Date();
+		const diff = now - new Date(date);
+		const minutes = Math.floor(diff / 60000);
+		const hours = Math.floor(minutes / 60);
+
+		if (minutes < 1) return 'hace menos de 1 min';
+		if (minutes < 60) return `hace ${minutes} min`;
+		if (hours < 24) return `hace ${hours}h ${minutes % 60}min`;
+		return new Date(date).toLocaleString('es-ES');
 	}
 
 	async handleUsers(chatId, args, msg, filter = 'all', page = 0) {

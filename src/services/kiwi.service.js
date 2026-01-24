@@ -367,11 +367,11 @@ class KiwiService {
 					allowChangeInboundDestination: true,
 					allowChangeInboundSource: true,
 					allowDifferentStationConnection: false,
-					enableSelfTransfer: false,
+					enableSelfTransfer: true,
 					enableThrowAwayTicketing: true,
 					enableTrueHiddenCity: true,
 					transportTypes: ['FLIGHT'],
-					contentProviders: ['KIWI'],
+					contentProviders: ['KIWI', 'FRESH'],
 					flightsApiLimit: 25,
 					limit: 20,
 				};
@@ -442,113 +442,26 @@ class KiwiService {
 	}
 
 	formatAirportCode(code) {
+		if (!code) return code;
+
 		// Si ya es un ID de Kiwi (contiene ':'), devolverlo directamente
-		if (code && code.includes(':')) {
-			console.log(`📍 ID Kiwi directo: ${code}`);
+		if (code.includes(':')) {
 			return code;
 		}
 
-		// Si parece un ID de ciudad de Kiwi (contiene '_' y no es código IATA de 3 letras)
-		// Ej: buenos-aires_ba_ar, berlin_de, sydney_ns_au
-		if (code && code.includes('_') && code.length > 3) {
-			const formattedId = `City:${code.toLowerCase()}`;
-			console.log(`📍 ID ciudad Kiwi: ${code} → ${formattedId}`);
-			return formattedId;
+		// Si parece un ID de ciudad de Kiwi (contiene '_')
+		// Ej: buenos-aires_ba_ar, berlin_de, sydney_ns_au, cordoba_cd_ar
+		if (code.includes('_')) {
+			return `City:${code.toLowerCase()}`;
 		}
 
-		const cityMapping = {
-			// EUROPA
-			VIE: 'City:vienna_at',
-			BER: 'City:berlin_de',
-			BRI: 'City:bari_it',
-
-			// Argentina
-			BUE: 'City:buenos-aires_ar',
-			EZE: 'Station:airport:EZE',
-			AEP: 'Airport:jorge-newbery-airfield_ar',
-			COR: 'City:cordoba_ar',
-			ROS: 'City:rosario_sf_ar',
-			MDZ: 'Airport:mendoza_ar',
-			IGU: 'Airport:iguazu-falls_ar',
-			USH: 'Airport:ushuaia_ar',
-			BRC: 'Airport:bariloche_ar',
-			FTE: 'Airport:el-calafate_ar',
-
-			// España
-			MAD: 'City:madrid_es',
-			BCN: 'City:barcelona_es',
-			VLC: 'City:valencia_es',
-			SVQ: 'City:seville_es',
-			BIO: 'City:bilbao_es',
-			PMI: 'Airport:palma-mallorca_es',
-			LPA: 'Airport:las-palmas_es',
-			TFS: 'Airport:tenerife-south_es',
-
-			// Europa común
-			CDG: 'Airport:paris-charles-de-gaulle_fr',
-			LHR: 'Airport:london-heathrow_gb',
-			FCO: 'Airport:rome-fiumicino_it',
-			AMS: 'Airport:amsterdam-schiphol_nl',
-			FRA: 'Airport:frankfurt_de',
-			MUC: 'Airport:munich_de',
-			ZUR: 'Airport:zurich_ch',
-			LIS: 'City:lisbon_pt',
-			MXP: 'Airport:milan-malpensa_it',
-
-			// Americas
-			MIA: 'City:miami_us',
-			JFK: 'Airport:new-york-jfk_us',
-			LAX: 'Airport:los-angeles_us',
-			MEX: 'City:mexico-city_mx',
-			GRU: 'Airport:sao-paulo-guarulhos_br',
-			GIG: 'Airport:rio-de-janeiro-galeao_br',
-			SCL: 'City:santiago_cl',
-			LIM: 'City:lima_pe',
-			BOG: 'City:bogota_co',
-			CUN: 'City:cancun_mx',
-
-			// JAPÓN
-			NRT: 'Airport:tokyo-narita_jp',
-			HND: 'Airport:tokyo-haneda_jp',
-			KIX: 'Airport:osaka-kansai_jp',
-			NGO: 'Airport:nagoya-chubu_jp',
-			FUK: 'Airport:fukuoka_jp',
-			SPK: 'Airport:sapporo-chitose_jp',
-			ITM: 'Airport:osaka-itami_jp',
-			KMI: 'Airport:miyazaki_jp',
-			HIJ: 'Airport:hiroshima_jp',
-			OKA: 'Airport:okinawa-naha_jp',
-
-			// OTROS DESTINOS ASIÁTICOS
-			ICN: 'Airport:seoul-incheon_kr',
-			GMP: 'Airport:seoul-gimpo_kr',
-			PVG: 'Airport:shanghai-pudong_cn',
-			PEK: 'Airport:beijing-capital_cn',
-			HKG: 'Airport:hong-kong_hk',
-			SIN: 'Airport:singapore-changi_sg',
-			BKK: 'Airport:bangkok-suvarnabhumi_th',
-			KUL: 'Airport:kuala-lumpur_my',
-			CGK: 'Airport:jakarta-soekarno-hatta_id',
-			MNL: 'Airport:manila_ph',
-
-			// OCEANÍA
-			SYD: 'Airport:sydney-kingsford-smith_au',
-			MEL: 'Airport:melbourne_au',
-			AKL: 'Airport:auckland_nz',
-
-			// TURQUÍA
-			IST: 'City:istanbul_tr',
-			SAW: 'Airport:sabiha-gokcen_tr',
-		};
-
-		const formatted = cityMapping[code.toUpperCase()];
-		if (formatted) {
-			console.log(`📍 Código ${code} → ${formatted}`);
-			return formatted;
+		// Si es un código IATA de 3 letras, usar formato de aeropuerto
+		if (code.length === 3 && /^[A-Z]{3}$/i.test(code)) {
+			return `Airport:${code.toUpperCase()}`;
 		}
 
-		console.warn(`⚠️ Código ${code} no está mapeado, usando formato genérico`);
-		return `City:${code.toLowerCase()}_de`;
+		// Fallback: devolver como está
+		return code;
 	}
 
 	async searchLocations(term) {
@@ -566,11 +479,13 @@ class KiwiService {
 
 			// Filtrar solo ciudades y aeropuertos
 			const allLocations = response.data.locations || [];
-			const locations = allLocations.filter(
-				(loc) => loc.type === 'city' || loc.type === 'airport'
-			).slice(0, 5);
+			const locations = allLocations
+				.filter((loc) => loc.type === 'city' || loc.type === 'airport')
+				.slice(0, 5);
 
-			console.log(`📍 Encontradas ${locations.length} ubicaciones para "${term}"`);
+			console.log(
+				`📍 Encontradas ${locations.length} ubicaciones para "${term}"`
+			);
 			return locations;
 		} catch (error) {
 			console.error('❌ Error buscando ubicaciones:', error.message);
@@ -652,14 +567,18 @@ class KiwiService {
 						return;
 					}
 
-					// 🔥 NUEVA VALIDACIÓN: Verificar destinos correctos
+					// 🔥 VALIDACIÓN: Verificar destinos correctos
+					// Solo validar cuando NO es un ID de ciudad (que contiene '_')
+					// Los IDs de ciudad como "buenos-aires_ba_ar" retornan aeropuertos como EZE, AEP
 					const expectedOrigin = searchQuery.origin;
-					const expectedDestination = searchQuery.destination;
 					const actualOrigin = outboundSegment.source?.station?.code;
-					const actualDestination = outboundSegment.destination?.station?.code;
 
-					// Validar que el primer segmento sea el origen correcto
-					if (actualOrigin !== expectedOrigin) {
+					// Si el origen esperado es un código IATA (3 letras, sin '_'), validar estrictamente
+					const isOriginIataCode =
+						expectedOrigin &&
+						expectedOrigin.length === 3 &&
+						!expectedOrigin.includes('_');
+					if (isOriginIataCode && actualOrigin !== expectedOrigin) {
 						console.warn(
 							`⚠️ Origen incorrecto. Esperado: ${expectedOrigin}, Actual: ${actualOrigin}`
 						);

@@ -386,14 +386,23 @@ Umbral: €${routeMonitor.priceThreshold}`;
 		if (!this.bot || !this.defaultChatId) return false;
 
 		try {
-			const message = `📊 <b>Estado del Monitoreo de Vuelos</b>
+			const message = `📊 <b>Estado del Sistema</b>
 
-🔍 <b>Rutas activas:</b> ${stats.activeRoutes}
-✅ <b>Chequeos hoy:</b> ${stats.checksToday}
-🚨 <b>Alertas enviadas:</b> ${stats.alertsToday}
-💰 <b>Mejor precio encontrado:</b> €${stats.bestPriceToday?.toFixed(0) || 'N/A'}
+<b>Monitoreo</b>
+🔍 Rutas activas: ${stats.activeRoutes}
+✅ Chequeos hoy: ${stats.checksToday}
+🚨 Alertas hoy: ${stats.alertsToday}
+${stats.errorsToday > 0 ? `⚠️ Errores hoy: ${stats.errorsToday}` : ''}
 
-⏰ <i>Último reporte: ${new Date().toLocaleString('es-ES')}</i>`;
+<b>Usuarios</b>
+👥 Usuarios activos: ${stats.totalUsers || 0}
+⏳ Pendientes: ${stats.pendingUsers || 0}
+📬 Usuarios con alertas: ${stats.usersWithAlerts || 0}
+
+<b>Histórico</b>
+📩 Total alertas enviadas: ${stats.totalAlertsSent || 0}
+
+⏰ <i>${new Date().toLocaleString('es-ES')}</i>`;
 
 			await this.bot.sendMessage(this.defaultChatId, message, {
 				parse_mode: 'HTML',

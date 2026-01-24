@@ -382,10 +382,28 @@ class MonitoringService {
 
 	async sendDailyReport() {
 		try {
+			const User = require('../models/user.model');
+
 			const activeRoutes = await RouteMonitor.countDocuments({isActive: true});
 			const todayFlights = await Flight.countDocuments({
 				scrapedAt: {$gte: new Date(Date.now() - 24 * 60 * 60 * 1000)},
 			});
+
+			// Estadísticas de usuarios
+			const totalUsers = await User.countDocuments({status: 'active'});
+			const pendingUsers = await User.countDocuments({status: 'pending'});
+
+			// Usuarios únicos con alertas (monitores que enviaron alertas)
+			const monitorsWithAlerts = await RouteMonitor.find({
+				'stats.alertsSent': {$gt: 0},
+			}).distinct('notifications.telegram.chatId');
+			const usersWithAlerts = monitorsWithAlerts.length;
+
+			// Total de alertas enviadas (suma de todos los monitores)
+			const alertsAggregation = await RouteMonitor.aggregate([
+				{$group: {_id: null, totalAlerts: {$sum: '$stats.alertsSent'}}},
+			]);
+			const totalAlertsSent = alertsAggregation[0]?.totalAlerts || 0;
 
 			const stats = {
 				activeRoutes,
@@ -393,6 +411,10 @@ class MonitoringService {
 				alertsToday: this.stats.alertsToday,
 				flightsFound: todayFlights,
 				errorsToday: this.stats.errorsToday,
+				totalUsers,
+				pendingUsers,
+				usersWithAlerts,
+				totalAlertsSent,
 			};
 
 			await this.telegramService.sendMonitoringStatus(stats);
