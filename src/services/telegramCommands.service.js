@@ -1260,11 +1260,16 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 
 		// Actualizar mensaje del admin
 		await this.telegramService.bot.editMessageText(
-			`<b>${displayName}</b>\nAprobado`,
+			`<b>${displayName}</b>\nAprobado ✓`,
 			{
 				chat_id: chatId,
 				message_id: messageId,
 				parse_mode: 'HTML',
+				reply_markup: {
+					inline_keyboard: [
+						[{text: '← Volver a usuarios', callback_data: 'usersfilter_all_0'}]
+					]
+				}
 			}
 		);
 
@@ -1309,6 +1314,11 @@ Usa /help para ver los comandos disponibles.
 				chat_id: chatId,
 				message_id: messageId,
 				parse_mode: 'HTML',
+				reply_markup: {
+					inline_keyboard: [
+						[{text: '← Volver a usuarios', callback_data: 'usersfilter_all_0'}]
+					]
+				}
 			}
 		);
 
