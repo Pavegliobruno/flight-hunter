@@ -683,6 +683,25 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 		const startDate = dates[0];
 		const endDate = dates[1] && dateRegex.test(dates[1]) ? dates[1] : dates[0];
 
+		// Validar que las fechas no sean en el pasado
+		const today = new Date().toISOString().split('T')[0];
+		if (startDate < today) {
+			await this.sendMessage(
+				chatId,
+				'❌ La fecha de inicio no puede ser en el pasado.'
+			);
+			return;
+		}
+
+		// Validar que endDate no sea anterior a startDate
+		if (endDate < startDate) {
+			await this.sendMessage(
+				chatId,
+				'❌ La fecha de fin no puede ser anterior a la de inicio.'
+			);
+			return;
+		}
+
 		state.data.outboundDateRange = {
 			startDate,
 			endDate,
@@ -725,6 +744,35 @@ Ejemplo: <code>2026-05-30 2026-06-10</code>
 			const startDate = dates[0];
 			const endDate =
 				dates[1] && dateRegex.test(dates[1]) ? dates[1] : dates[0];
+
+			// Validar que las fechas no sean en el pasado
+			const today = new Date().toISOString().split('T')[0];
+			if (startDate < today) {
+				await this.sendMessage(
+					chatId,
+					'❌ La fecha de vuelta no puede ser en el pasado.'
+				);
+				return;
+			}
+
+			// Validar que endDate no sea anterior a startDate
+			if (endDate < startDate) {
+				await this.sendMessage(
+					chatId,
+					'❌ La fecha de fin no puede ser anterior a la de inicio.'
+				);
+				return;
+			}
+
+			// Validar que la vuelta sea después de la ida
+			const outboundEnd = state.data.outboundDateRange.endDate;
+			if (startDate < outboundEnd) {
+				await this.sendMessage(
+					chatId,
+					`❌ La fecha de vuelta debe ser posterior a la ida (${outboundEnd}).`
+				);
+				return;
+			}
 
 			state.data.flightType = 'roundtrip';
 			state.data.inboundDateRange = {
@@ -1770,6 +1818,19 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		const startDate = dates[0];
 		const endDate = dates[1] && dateRegex.test(dates[1]) ? dates[1] : dates[0];
 
+		// Validar que las fechas no sean en el pasado
+		const today = new Date().toISOString().split('T')[0];
+		if (startDate < today) {
+			await this.sendMessage(chatId, '❌ La fecha no puede ser en el pasado.');
+			return;
+		}
+
+		// Validar que endDate no sea anterior a startDate
+		if (endDate < startDate) {
+			await this.sendMessage(chatId, '❌ La fecha de fin no puede ser anterior a la de inicio.');
+			return;
+		}
+
 		const monitor = await RouteMonitor.findById(state.data.monitorId);
 		if (!monitor) {
 			await this.sendMessage(chatId, 'Monitor no encontrado.');
@@ -1806,10 +1867,33 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 		const startDate = dates[0];
 		const endDate = dates[1] && dateRegex.test(dates[1]) ? dates[1] : dates[0];
 
+		// Validar que las fechas no sean en el pasado
+		const today = new Date().toISOString().split('T')[0];
+		if (startDate < today) {
+			await this.sendMessage(chatId, '❌ La fecha no puede ser en el pasado.');
+			return;
+		}
+
+		// Validar que endDate no sea anterior a startDate
+		if (endDate < startDate) {
+			await this.sendMessage(chatId, '❌ La fecha de fin no puede ser anterior a la de inicio.');
+			return;
+		}
+
 		const monitor = await RouteMonitor.findById(state.data.monitorId);
 		if (!monitor) {
 			await this.sendMessage(chatId, 'Monitor no encontrado.');
 			this.conversationState.delete(chatId);
+			return;
+		}
+
+		// Validar que la vuelta sea después de la ida
+		const outboundEnd = monitor.outboundDateRange?.endDate;
+		if (outboundEnd && startDate < outboundEnd) {
+			await this.sendMessage(
+				chatId,
+				`❌ La fecha de vuelta debe ser posterior a la ida (${outboundEnd}).`
+			);
 			return;
 		}
 
