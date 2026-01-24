@@ -11,13 +11,11 @@ const routeMonitorSchema = new mongoose.Schema(
 		origin: {
 			type: String,
 			required: true,
-			uppercase: true,
 			trim: true,
 		},
 		destination: {
 			type: String,
 			required: true,
-			uppercase: true,
 			trim: true,
 		},
 

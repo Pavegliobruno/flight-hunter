@@ -448,6 +448,14 @@ class KiwiService {
 			return code;
 		}
 
+		// Si parece un ID de ciudad de Kiwi (contiene '_' y no es código IATA de 3 letras)
+		// Ej: buenos-aires_ba_ar, berlin_de, sydney_ns_au
+		if (code && code.includes('_') && code.length > 3) {
+			const formattedId = `City:${code.toLowerCase()}`;
+			console.log(`📍 ID ciudad Kiwi: ${code} → ${formattedId}`);
+			return formattedId;
+		}
+
 		const cityMapping = {
 			// EUROPA
 			VIE: 'City:vienna_at',
