@@ -52,6 +52,7 @@ class MonitoringService {
 			async () => {
 				await this.sendDailyReport();
 				await this.cleanupOldFlights();
+				await this.cleanupExpiredMonitors();
 				this.resetDailyStats();
 			},
 			{
@@ -434,9 +435,25 @@ class MonitoringService {
 				scrapedAt: {$lt: twoDaysAgo},
 			});
 
-			console.log(`Vuelos eliminados: ${result.deletedCount}`);
+			console.log(`🗑️ Vuelos eliminados: ${result.deletedCount}`);
 		} catch (error) {
 			console.error('Error en limpieza de vuelos antiguos:', error);
+		}
+	}
+
+	async cleanupExpiredMonitors() {
+		try {
+			const today = new Date().toISOString().split('T')[0];
+
+			const result = await RouteMonitor.deleteMany({
+				'outboundDateRange.endDate': {$lt: today},
+			});
+
+			if (result.deletedCount > 0) {
+				console.log(`🗑️ Monitores expirados eliminados: ${result.deletedCount}`);
+			}
+		} catch (error) {
+			console.error('Error en limpieza de monitores expirados:', error);
 		}
 	}
 
