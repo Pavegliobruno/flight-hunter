@@ -194,7 +194,9 @@ class TelegramService {
 			// Calcular días del viaje
 			const departureDate = new Date(flight.departure?.date);
 			const returnDate = new Date(flight.returnFlight.departure?.date);
-			const tripDays = Math.round((returnDate - departureDate) / (1000 * 60 * 60 * 24));
+			const tripDays = Math.round(
+				(returnDate - departureDate) / (1000 * 60 * 60 * 24)
+			);
 
 			const outboundDuration =
 				this.calculateFlightDuration(flight.departure, flight.arrival) ||
@@ -212,13 +214,12 @@ class TelegramService {
 				? 'Directo'
 				: `${flight.returnFlight.numberOfStops || 0} escala${(flight.returnFlight.numberOfStops || 0) > 1 ? 's' : ''}`;
 
-			return `<b>€${Math.round(flight.price.amount)}</b> - ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
+			return `<b>€${Math.round(flight.price.amount)}</b> | ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
 
 <b>Ida:</b> ${this.formatDateShort(flight.departure?.date)} ${this.formatTime(flight.departure?.time)} · ${outboundDuration} · ${outboundStops}
 <b>Vuelta:</b> ${this.formatDateShort(flight.returnFlight.departure?.date)} ${this.formatTime(flight.returnFlight.departure?.time)} · ${returnDuration} · ${returnStops}
 
-📅 <b>${tripDays} días</b> · Umbral: €${routeMonitor.priceThreshold}
-<i>${routeMonitor.name}</i>`;
+<b>${tripDays} días</b> · Umbral: €${routeMonitor.priceThreshold}`;
 		} else {
 			// Solo ida
 			const flightDuration =
@@ -229,12 +230,11 @@ class TelegramService {
 				? 'Directo'
 				: `${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
 
-			return `<b>€${Math.round(flight.price.amount)}</b> - ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
+			return `<b>€${Math.round(flight.price.amount)}</b> | ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
 
 <b>Ida:</b> ${this.formatDateShort(flight.departure?.date)} ${this.formatTime(flight.departure?.time)} · ${flightDuration} · ${flightStops}
 
-Umbral: €${routeMonitor.priceThreshold}
-<i>${routeMonitor.name}</i>`;
+Umbral: €${routeMonitor.priceThreshold}`;
 		}
 	}
 
