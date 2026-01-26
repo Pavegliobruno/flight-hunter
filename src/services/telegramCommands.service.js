@@ -14,6 +14,7 @@ class TelegramCommandsService {
 			'/cancel': this.handleCancel.bind(this),
 			'/users': this.handleUsers.bind(this),
 			'/status': this.handleStatus.bind(this),
+			'/broadcast': this.handleBroadcast.bind(this),
 		};
 
 		this.adminChatId = process.env.TELEGRAM_CHAT_ID;
@@ -60,7 +61,7 @@ No tenés acceso a este bot.
 			}
 
 			// Comandos solo para admin
-			if ((command === '/users' || command === '/status') && !user.isAdmin) {
+			if ((command === '/users' || command === '/status' || command === '/broadcast') && !user.isAdmin) {
 				await this.sendMessage(chatId, 'No tenés permisos para este comando.');
 				return;
 			}
@@ -273,6 +274,57 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 		} catch (error) {
 			console.error('Error en handleStatus:', error);
 			await this.sendMessage(chatId, 'Error obteniendo estado del sistema.');
+		}
+	}
+
+	async handleBroadcast(chatId, args, msg) {
+		// Obtener el mensaje después del comando
+		const messageText = msg.text.replace(/^\/broadcast\s*/, '').trim();
+
+		if (!messageText) {
+			await this.sendMessage(
+				chatId,
+				`<b>Uso:</b> /broadcast [mensaje]
+
+Ejemplo:
+<code>/broadcast Nueva función disponible!</code>`
+			);
+			return;
+		}
+
+		try {
+			// Obtener todos los usuarios activos
+			const activeUsers = await User.find({status: 'active'});
+
+			let sent = 0;
+			let failed = 0;
+
+			await this.sendMessage(chatId, `📤 Enviando a ${activeUsers.length} usuarios...`);
+
+			for (const user of activeUsers) {
+				try {
+					await this.telegramService.bot.sendMessage(user.chatId, messageText, {
+						parse_mode: 'HTML',
+					});
+					sent++;
+					// Pequeño delay para evitar rate limiting
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				} catch (error) {
+					failed++;
+					console.error(`Error enviando a ${user.chatId}:`, error.message);
+				}
+			}
+
+			await this.sendMessage(
+				chatId,
+				`✅ <b>Broadcast completado</b>
+
+📨 Enviados: ${sent}
+❌ Fallidos: ${failed}`
+			);
+		} catch (error) {
+			console.error('Error en broadcast:', error);
+			await this.sendMessage(chatId, 'Error enviando broadcast.');
 		}
 	}
 
