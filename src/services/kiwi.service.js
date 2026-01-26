@@ -602,6 +602,15 @@ class KiwiService {
 					// price = precio en la moneda solicitada, priceEur = siempre en EUR
 					const priceInRequestedCurrency = itinerary.price?.amount;
 					const priceEur = itinerary.priceEur?.amount;
+
+					// 🔥 DEBUG: Comparar precios para detectar problemas de moneda
+					if (index < 3) {
+						console.log(`  💱 DEBUG Precio itinerario ${index + 1}:`);
+						console.log(`     price.amount (${currency}): ${priceInRequestedCurrency}`);
+						console.log(`     priceEur.amount (EUR): ${priceEur}`);
+						console.log(`     ¿Son iguales?: ${priceInRequestedCurrency === priceEur ? 'SÍ ⚠️' : 'NO ✅'}`);
+					}
+
 					const finalPrice = priceInRequestedCurrency || priceEur;
 
 					if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
