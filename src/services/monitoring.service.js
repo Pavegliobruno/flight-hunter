@@ -164,7 +164,8 @@ class MonitoringService {
 							);
 							const flights = this.kiwiService.parseFlightData(
 								rawData,
-								searchParams
+								searchParams,
+								routeMonitor.currency || 'EUR'
 							);
 
 							if (flights && flights.length > 0) {
@@ -210,7 +211,8 @@ class MonitoringService {
 						);
 						const flights = this.kiwiService.parseFlightData(
 							rawData,
-							searchParams
+							searchParams,
+							routeMonitor.currency || 'EUR'
 						);
 
 						if (flights && flights.length > 0) {

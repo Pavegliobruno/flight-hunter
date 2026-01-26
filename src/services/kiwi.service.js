@@ -379,6 +379,7 @@ class KiwiService {
 
 			// Obtener moneda del routeMonitor o usar EUR por defecto
 			const currency = routeMonitor?.currency?.toLowerCase() || 'eur';
+			console.log(`💱 Moneda para búsqueda: ${currency} (monitor: ${routeMonitor?.currency || 'no definida'})`);
 
 			const variables = {
 				search: searchObject,
@@ -549,7 +550,7 @@ class KiwiService {
 		}
 	}
 
-	parseFlightData(rawData, searchQuery) {
+	parseFlightData(rawData, searchQuery, currency = 'EUR') {
 		this.debugSearchResponse(rawData, searchQuery);
 
 		const flights = [];
@@ -598,9 +599,10 @@ class KiwiService {
 					} */
 
 					// Validar precios antes de usar
+					// price = precio en la moneda solicitada, priceEur = siempre en EUR
+					const priceInRequestedCurrency = itinerary.price?.amount;
 					const priceEur = itinerary.priceEur?.amount;
-					const priceOriginal = itinerary.price?.amount;
-					const finalPrice = priceEur || priceOriginal;
+					const finalPrice = priceInRequestedCurrency || priceEur;
 
 					if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
 						console.warn('⚠️ Precio inválido, saltando vuelo:', finalPrice);
@@ -618,7 +620,7 @@ class KiwiService {
 						id: itinerary.id || itinerary.shareId,
 						price: {
 							amount: finalPrice,
-							currency: priceEur ? 'EUR' : 'USD',
+							currency: priceInRequestedCurrency ? currency : 'EUR',
 						},
 						origin: {
 							city: outboundSegment.source?.station?.city?.name,
