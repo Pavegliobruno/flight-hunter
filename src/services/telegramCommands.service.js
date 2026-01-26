@@ -452,8 +452,9 @@ Recibirás alertas cuando encuentre precios bajos en las rutas que configuraste.
 
 	async sendMonitorCard(chatId, monitor) {
 		const status = monitor.isActive ? 'Activo' : 'Pausado';
+		const symbol = monitor.currency === 'USD' ? '$' : '€';
 		const bestPrice = monitor.bestPrice?.amount
-			? `€${Math.round(monitor.bestPrice.amount)}`
+			? `${symbol}${Math.round(monitor.bestPrice.amount)}`
 			: '-';
 		const alertsSent = monitor.stats?.alertsSent || 0;
 
@@ -474,7 +475,7 @@ Ida: ${idaStr}`;
 			message += `\nVuelta: ${vueltaStr}`;
 		}
 
-		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\nLímite: ${symbol}${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
 		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		// Botones según estado
@@ -520,7 +521,7 @@ Ida: ${idaStr}`;
 
 Vamos a configurar un nuevo monitor de vuelos paso a paso.
 
-<b>Paso 1/6:</b> ¿Cuál es el <b>origen</b>?
+<b>Paso 1/7:</b> ¿Cuál es el <b>origen</b>?
 Escribí el nombre de la ciudad o código IATA (ej: Berlin, Madrid, EZE)
 
 <i>Escribe /cancel para cancelar.</i>`;
@@ -616,7 +617,7 @@ Intentá con otro nombre de ciudad o código IATA.`
 				chatId,
 				`✅ Origen: <b>${state.data.originName}</b> (${state.data.originCode})
 
-<b>Paso 2/6:</b> ¿Cuál es el <b>destino</b>?
+<b>Paso 2/7:</b> ¿Cuál es el <b>destino</b>?
 Escribí el nombre de la ciudad o código IATA.`
 			);
 			return;
@@ -698,7 +699,7 @@ Intentá con otro nombre de ciudad o código IATA.`
 				chatId,
 				`✅ Destino: <b>${state.data.destinationName}</b> (${state.data.destinationCode})
 
-<b>Paso 3/6:</b> ¿Fechas de <b>ida</b>?
+<b>Paso 3/7:</b> ¿Fechas de <b>ida</b>?
 Enviá el rango de fechas en formato:
 <code>YYYY-MM-DD YYYY-MM-DD</code>
 
@@ -787,7 +788,7 @@ Ejemplo: <code>2026-05-01 2026-05-15</code>
 			chatId,
 			`✅ Ida: <b>${startDate}</b> a <b>${endDate}</b>
 
-<b>Paso 4/6:</b> ¿Fechas de <b>vuelta</b>?
+<b>Paso 4/7:</b> ¿Fechas de <b>vuelta</b>?
 Enviá el rango de fechas en formato:
 <code>YYYY-MM-DD YYYY-MM-DD</code>
 
@@ -855,7 +856,7 @@ Ejemplo: <code>2026-05-30 2026-06-10</code>
 			};
 		}
 
-		state.step = 'price';
+		state.step = 'currency';
 		this.conversationState.set(chatId, state);
 
 		const vueltaMsg =
@@ -863,14 +864,22 @@ Ejemplo: <code>2026-05-30 2026-06-10</code>
 				? '✅ Tipo: <b>Solo ida</b>'
 				: `✅ Vuelta: <b>${state.data.inboundDateRange.startDate}</b> a <b>${state.data.inboundDateRange.endDate}</b>`;
 
-		await this.sendMessage(
+		await this.telegramService.bot.sendMessage(
 			chatId,
 			`${vueltaMsg}
 
-<b>Paso 5/6:</b> ¿Precio <b>umbral</b> en EUR?
-Recibirás alertas cuando el precio sea menor a este valor.
-
-Ejemplo: <code>800</code>`
+<b>Paso 5/7:</b> ¿En qué <b>moneda</b> querés el precio?`,
+			{
+				parse_mode: 'HTML',
+				reply_markup: {
+					inline_keyboard: [
+						[
+							{text: '🇪🇺 EUR (€)', callback_data: 'currency_EUR'},
+							{text: '🇺🇸 USD ($)', callback_data: 'currency_USD'},
+						],
+					],
+				},
+			}
 		);
 	}
 
@@ -889,11 +898,14 @@ Ejemplo: <code>800</code>`
 		state.step = 'max_stops';
 		this.conversationState.set(chatId, state);
 
+		const currency = state.data.currency || 'EUR';
+		const symbol = currency === 'EUR' ? '€' : '$';
+
 		await this.sendMessage(
 			chatId,
-			`✅ Umbral: <b>€${price}</b>
+			`✅ Límite: <b>${symbol}${price}</b>
 
-<b>Paso 6/6:</b> ¿Máximo de <b>escalas</b>?
+<b>Paso 7/7:</b> ¿Máximo de <b>escalas</b>?
 Enviá un número (0 = solo directos, 1, 2, etc.)
 
 Ejemplo: <code>2</code>
@@ -925,6 +937,8 @@ Ejemplo: <code>2</code>
 			state.data.maxStops === null ? 'Sin límite' : state.data.maxStops;
 		const flightTypeMsg =
 			state.data.flightType === 'oneway' ? 'Solo ida' : 'Ida y vuelta';
+		const currency = state.data.currency || 'EUR';
+		const symbol = currency === 'EUR' ? '€' : '$';
 
 		const originDisplay = `${state.data.originName} (${state.data.originCode})`;
 		const destDisplay = `${state.data.destinationName} (${state.data.destinationCode})`;
@@ -935,7 +949,8 @@ Ejemplo: <code>2</code>
 📅 <b>Ida:</b> ${state.data.outboundDateRange.startDate} a ${state.data.outboundDateRange.endDate}
 ${state.data.flightType === 'roundtrip' ? `📅 <b>Vuelta:</b> ${state.data.inboundDateRange.startDate} a ${state.data.inboundDateRange.endDate}` : ''}
 ✈️ <b>Tipo:</b> ${flightTypeMsg}
-💰 <b>Umbral:</b> €${state.data.priceThreshold}
+💵 <b>Moneda:</b> ${currency}
+💰 <b>Límite:</b> ${symbol}${state.data.priceThreshold}
 🔄 <b>Escalas máx:</b> ${stopsMsg}
 
 ¿Confirmar creación? Escribe <b>si</b> o <b>no</b>`;
@@ -948,11 +963,13 @@ ${state.data.flightType === 'roundtrip' ? `📅 <b>Vuelta:</b> ${state.data.inbo
 
 		if (input === 'si' || input === 'sí' || input === 'yes' || input === 's') {
 			try {
+				const currency = state.data.currency || 'EUR';
 				const monitorData = {
 					name: `${state.data.originName} → ${state.data.destinationName}`,
 					origin: state.data.origin, // Kiwi ID (ej: City:berlin_de)
 					destination: state.data.destination, // Kiwi ID
 					priceThreshold: state.data.priceThreshold,
+					currency: currency,
 					flightType: state.data.flightType,
 					outboundDateRange: state.data.outboundDateRange,
 					inboundDateRange: state.data.inboundDateRange,
@@ -972,13 +989,14 @@ ${state.data.flightType === 'roundtrip' ? `📅 <b>Vuelta:</b> ${state.data.inbo
 
 				this.conversationState.delete(chatId);
 
+				const symbol = currency === 'EUR' ? '€' : '$';
 				await this.sendMessage(
 					chatId,
 					`✅ <b>Monitor creado</b>
 
-${state.data.originName} (${state.data.originCode}) → ${state.data.destinationName} (${state.data.destinationCode}) · Umbral €${monitor.priceThreshold}
+${state.data.originName} (${state.data.originCode}) → ${state.data.destinationName} (${state.data.destinationCode}) · Límite ${symbol}${monitor.priceThreshold}
 
-Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por debajo de tu umbral.`
+Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por debajo de tu límite.`
 				);
 
 				console.log(
@@ -1071,6 +1089,12 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 			if (data.startsWith('dest_select_')) {
 				const index = parseInt(data.replace('dest_select_', ''));
 				await this.handleDestSelectCallback(chatId, index, callbackQuery.id);
+				return;
+			}
+			// Handler para selección de moneda
+			if (data.startsWith('currency_')) {
+				const currency = data.replace('currency_', '');
+				await this.handleCurrencyCallback(chatId, currency, callbackQuery.id);
 				return;
 			}
 
@@ -1258,7 +1282,7 @@ Buscaremos vuelos cada 30 min. Te notificamos solo cuando el precio esté por de
 			chatId,
 			`✅ Origen: <b>${state.data.originName}</b> (${state.data.originCode})
 
-<b>Paso 2/6:</b> ¿Cuál es el <b>destino</b>?
+<b>Paso 2/7:</b> ¿Cuál es el <b>destino</b>?
 Escribí el nombre de la ciudad o código IATA.`
 		);
 	}
@@ -1308,12 +1332,40 @@ Escribí el nombre de la ciudad o código IATA.`
 			chatId,
 			`✅ Destino: <b>${state.data.destinationName}</b> (${state.data.destinationCode})
 
-<b>Paso 3/6:</b> ¿Fechas de <b>ida</b>?
+<b>Paso 3/7:</b> ¿Fechas de <b>ida</b>?
 Enviá el rango de fechas en formato:
 <code>YYYY-MM-DD YYYY-MM-DD</code>
 
 Ejemplo: <code>2026-05-01 2026-05-15</code>
 (o una sola fecha si es fija)`
+		);
+	}
+
+	async handleCurrencyCallback(chatId, currency, callbackId) {
+		const state = this.conversationState.get(chatId.toString());
+
+		if (!state || state.step !== 'currency') {
+			await this.telegramService.bot.answerCallbackQuery(callbackId, {
+				text: 'Sesión expirada. Usa /create para empezar de nuevo.',
+			});
+			return;
+		}
+
+		state.data.currency = currency;
+		state.step = 'price';
+		this.conversationState.set(chatId.toString(), state);
+
+		await this.telegramService.bot.answerCallbackQuery(callbackId);
+
+		const symbol = currency === 'EUR' ? '€' : '$';
+		await this.sendMessage(
+			chatId,
+			`✅ Moneda: <b>${currency} (${symbol})</b>
+
+<b>Paso 6/7:</b> ¿Precio <b>límite</b> en ${currency}?
+Recibirás alertas cuando el precio sea menor a este valor.
+
+Ejemplo: <code>800</code>`
 		);
 	}
 
@@ -1761,10 +1813,11 @@ Usa /help para ver los comandos disponibles.
 		const inbound = monitor.inboundDateRange;
 		const stopsText =
 			monitor.maxStops === null ? 'Sin límite' : monitor.maxStops;
+		const symbol = monitor.currency === 'USD' ? '$' : '€';
 
 		const message = `<b>Editar: ${monitor.name}</b>
 
-Precio umbral: €${monitor.priceThreshold}
+Precio límite: ${symbol}${monitor.priceThreshold}
 Escalas máx: ${stopsText}
 Ida: ${this.formatShortDate(outbound?.startDate)} - ${this.formatShortDate(outbound?.endDate)}
 ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.formatShortDate(inbound?.endDate)}` : ''}
@@ -1817,8 +1870,10 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 			data: {monitorId},
 		});
 
+		const symbol = monitor.currency === 'USD' ? '$' : '€';
+		const currency = monitor.currency || 'EUR';
 		const prompts = {
-			price: `Ingresá el nuevo precio umbral en EUR:\n\nActual: €${monitor.priceThreshold}`,
+			price: `Ingresá el nuevo precio límite en ${currency}:\n\nActual: ${symbol}${monitor.priceThreshold}`,
 			stops: `Ingresá el máximo de escalas (0-5) o "cualquiera":\n\nActual: ${monitor.maxStops === null ? 'Sin límite' : monitor.maxStops}`,
 			outbound: `Ingresá las nuevas fechas de ida:\n<code>YYYY-MM-DD YYYY-MM-DD</code>\n\nActual: ${this.formatShortDate(monitor.outboundDateRange?.startDate)} - ${this.formatShortDate(monitor.outboundDateRange?.endDate)}`,
 			inbound: `Ingresá las nuevas fechas de vuelta:\n<code>YYYY-MM-DD YYYY-MM-DD</code>\n\nActual: ${this.formatShortDate(monitor.inboundDateRange?.startDate)} - ${this.formatShortDate(monitor.inboundDateRange?.endDate)}`,
@@ -2005,8 +2060,9 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 
 		// Restaurar tarjeta del monitor
 		const status = monitor.isActive ? 'Activo' : 'Pausado';
+		const symbol = monitor.currency === 'USD' ? '$' : '€';
 		const bestPrice = monitor.bestPrice?.amount
-			? `€${Math.round(monitor.bestPrice.amount)}`
+			? `${symbol}${Math.round(monitor.bestPrice.amount)}`
 			: '-';
 		const alertsSent = monitor.stats?.alertsSent || 0;
 
@@ -2027,7 +2083,7 @@ Ida: ${idaStr}`;
 			message += `\nVuelta: ${vueltaStr}`;
 		}
 
-		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\nLímite: ${symbol}${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
 		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		const buttons = [];
@@ -2218,8 +2274,9 @@ ${monitor.origin} → ${monitor.destination}`;
 
 	async updateMonitorCard(chatId, messageId, monitor) {
 		const status = monitor.isActive ? 'Activo' : 'Pausado';
+		const symbol = monitor.currency === 'USD' ? '$' : '€';
 		const bestPrice = monitor.bestPrice?.amount
-			? `€${Math.round(monitor.bestPrice.amount)}`
+			? `${symbol}${Math.round(monitor.bestPrice.amount)}`
 			: '-';
 		const alertsSent = monitor.stats?.alertsSent || 0;
 
@@ -2240,7 +2297,7 @@ Ida: ${idaStr}`;
 			message += `\nVuelta: ${vueltaStr}`;
 		}
 
-		message += `\nUmbral: €${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\nLímite: ${symbol}${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
 		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		const buttons = [];

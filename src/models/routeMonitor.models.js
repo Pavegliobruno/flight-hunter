@@ -23,7 +23,13 @@ const routeMonitorSchema = new mongoose.Schema(
 		priceThreshold: {
 			type: Number,
 			required: true,
-			default: 500, // EUR
+			default: 500,
+		},
+
+		currency: {
+			type: String,
+			enum: ['EUR', 'USD'],
+			default: 'EUR',
 		},
 
 		flightType: {

@@ -328,8 +328,9 @@ class MonitoringService {
 				}
 			}
 
+			const symbol = routeMonitor.currency === 'USD' ? '$' : '€';
 			const resultMsg = bestPrice
-				? `€${bestPrice.price.amount} ${bestPrice.price.amount <= routeMonitor.priceThreshold ? '🔥' : ''}`
+				? `${symbol}${bestPrice.price.amount} ${bestPrice.price.amount <= routeMonitor.priceThreshold ? '🔥' : ''}`
 				: 'No se encontraron vuelos';
 
 			console.log(

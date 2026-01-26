@@ -377,13 +377,16 @@ class KiwiService {
 				};
 			}
 
+			// Obtener moneda del routeMonitor o usar EUR por defecto
+			const currency = routeMonitor?.currency?.toLowerCase() || 'eur';
+
 			const variables = {
 				search: searchObject,
 				filter: apiFilters,
 				options: {
 					sortBy: 'QUALITY', // PRICE or QUALITY
 					mergePriceDiffRule: 'INCREASED',
-					currency: 'eur',
+					currency: currency,
 					apiUrl: null,
 					locale: 'es',
 					market: 'de',

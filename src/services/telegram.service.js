@@ -189,6 +189,7 @@ class TelegramService {
 		const isNewLow =
 			!routeMonitor.bestPrice ||
 			flight.price.amount < routeMonitor.bestPrice.amount;
+		const symbol = routeMonitor.currency === 'USD' ? '$' : '€';
 
 		if (flight.returnFlight) {
 			// Calcular días del viaje
@@ -214,12 +215,12 @@ class TelegramService {
 				? 'Directo'
 				: `${flight.returnFlight.numberOfStops || 0} escala${(flight.returnFlight.numberOfStops || 0) > 1 ? 's' : ''}`;
 
-			return `<b>€${Math.round(flight.price.amount)}</b> | ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
+			return `<b>${symbol}${Math.round(flight.price.amount)}</b> | ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
 
 <b>Ida:</b> ${this.formatDateShort(flight.departure?.date)} ${this.formatTime(flight.departure?.time)} · ${outboundDuration} · ${outboundStops}
 <b>Vuelta:</b> ${this.formatDateShort(flight.returnFlight.departure?.date)} ${this.formatTime(flight.returnFlight.departure?.time)} · ${returnDuration} · ${returnStops}
 
-<b>${tripDays} días</b> · Umbral: €${routeMonitor.priceThreshold}`;
+<b>${tripDays} días</b> · Límite: ${symbol}${routeMonitor.priceThreshold}`;
 		} else {
 			// Solo ida
 			const flightDuration =
@@ -230,11 +231,11 @@ class TelegramService {
 				? 'Directo'
 				: `${flight.numberOfStops} escala${flight.numberOfStops > 1 ? 's' : ''}`;
 
-			return `<b>€${Math.round(flight.price.amount)}</b> | ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
+			return `<b>${symbol}${Math.round(flight.price.amount)}</b> | ${flight.origin.city} → ${flight.destination.city}${isNewLow ? ' 🔥' : ''}
 
 <b>Ida:</b> ${this.formatDateShort(flight.departure?.date)} ${this.formatTime(flight.departure?.time)} · ${flightDuration} · ${flightStops}
 
-Umbral: €${routeMonitor.priceThreshold}`;
+Límite: ${symbol}${routeMonitor.priceThreshold}`;
 		}
 	}
 
