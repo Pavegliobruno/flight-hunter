@@ -138,6 +138,16 @@ class TelegramService {
 				bookingUrl = 'https://kiwi.com' + bookingUrl;
 			}
 
+			// Agregar parámetro de moneda al URL para que Kiwi muestre el precio correcto
+			try {
+				const url = new URL(bookingUrl);
+				const currency = routeMonitor?.currency || 'EUR';
+				url.searchParams.set('curr', currency.toLowerCase());
+				bookingUrl = url.toString();
+			} catch (urlError) {
+				console.error('Error agregando currency al URL:', urlError.message);
+			}
+
 			// Generar links alternativos
 			const altLinks = this.generateAlternativeLinks(flight);
 
