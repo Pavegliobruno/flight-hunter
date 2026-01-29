@@ -351,4 +351,42 @@ routeMonitorSchema.methods.shouldAlert = function (price) {
 	return true;
 };
 
+// Método para obtener el nivel de alerta basado en estadísticas históricas
+routeMonitorSchema.methods.getAlertLevel = function (priceAmount) {
+	const stats = this.stats;
+	const lowestPrice = stats.lowestPrice;
+	const averagePrice = stats.averagePrice;
+
+	// Si no hay historial suficiente, usar el threshold como referencia
+	if (!lowestPrice || !averagePrice) {
+		const percentBelow = ((this.priceThreshold - priceAmount) / this.priceThreshold) * 100;
+
+		if (percentBelow >= 20) {
+			return { emoji: '🚀', level: 'INCREÍBLE', description: `${percentBelow.toFixed(0)}% bajo el límite` };
+		}
+		if (percentBelow >= 10) {
+			return { emoji: '🔥', level: 'MUY BUENO', description: `${percentBelow.toFixed(0)}% bajo el límite` };
+		}
+		return { emoji: '🟢', level: 'BUENO', description: 'Bajo el límite' };
+	}
+
+	// Con historial: comparar contra mínimo y promedio históricos
+	if (priceAmount <= lowestPrice) {
+		return { emoji: '🚀', level: 'INCREÍBLE', description: 'Nuevo mínimo histórico!' };
+	}
+
+	if (priceAmount <= lowestPrice * 1.10) {
+		const percentAboveLow = ((priceAmount - lowestPrice) / lowestPrice) * 100;
+		return { emoji: '🔥', level: 'MUY BUENO', description: `Solo ${percentAboveLow.toFixed(0)}% sobre el mínimo` };
+	}
+
+	if (priceAmount <= averagePrice) {
+		const percentBelowAvg = ((averagePrice - priceAmount) / averagePrice) * 100;
+		return { emoji: '🟢', level: 'BUENO', description: `${percentBelowAvg.toFixed(0)}% bajo el promedio` };
+	}
+
+	// Por debajo del threshold pero sobre el promedio
+	return { emoji: '📢', level: 'ALERTA', description: 'Bajo el límite' };
+};
+
 module.exports = mongoose.model('RouteMonitor', routeMonitorSchema);
