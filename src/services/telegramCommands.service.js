@@ -890,12 +890,12 @@ Ejemplo: <code>2026-05-30 2026-06-10</code>
 				return;
 			}
 
-			// Validar que la vuelta sea después de la ida
-			const outboundEnd = state.data.outboundDateRange.endDate;
-			if (startDate < outboundEnd) {
+			// Validar que la vuelta sea después de la ida (usar startDate, no endDate)
+			const outboundStart = state.data.outboundDateRange.startDate;
+			if (startDate < outboundStart) {
 				await this.sendMessage(
 					chatId,
-					`❌ La fecha de vuelta debe ser posterior a la ida (${outboundEnd}).`
+					`❌ La fecha de vuelta debe ser posterior a la ida (${outboundStart}).`
 				);
 				return;
 			}
@@ -2077,12 +2077,12 @@ ${inbound ? `Vuelta: ${this.formatShortDate(inbound?.startDate)} - ${this.format
 			return;
 		}
 
-		// Validar que la vuelta sea después de la ida
-		const outboundEnd = monitor.outboundDateRange?.endDate;
-		if (outboundEnd && startDate < outboundEnd) {
+		// Validar que la vuelta sea después de la ida (usar startDate, no endDate)
+		const outboundStart = monitor.outboundDateRange?.startDate;
+		if (outboundStart && startDate < outboundStart) {
 			await this.sendMessage(
 				chatId,
-				`❌ La fecha de vuelta debe ser posterior a la ida (${outboundEnd}).`
+				`❌ La fecha de vuelta debe ser posterior a la ida (${outboundStart}).`
 			);
 			return;
 		}
