@@ -274,6 +274,35 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 
 	this.stats.totalChecks += 1;
 
+	// Fix 4: Resetear stats corruptos antes de calcular
+	if (
+		this.stats.averagePrice &&
+		(!isFinite(this.stats.averagePrice) || this.stats.averagePrice > 50000)
+	) {
+		console.log(
+			`🔧 Reseteando averagePrice corrupto: ${this.stats.averagePrice}`
+		);
+		this.stats.averagePrice = undefined;
+	}
+	if (
+		this.stats.lowestPrice &&
+		(!isFinite(this.stats.lowestPrice) || this.stats.lowestPrice > 50000)
+	) {
+		console.log(
+			`🔧 Reseteando lowestPrice corrupto: ${this.stats.lowestPrice}`
+		);
+		this.stats.lowestPrice = undefined;
+	}
+	if (
+		this.stats.highestPrice &&
+		(!isFinite(this.stats.highestPrice) || this.stats.highestPrice > 50000)
+	) {
+		console.log(
+			`🔧 Reseteando highestPrice corrupto: ${this.stats.highestPrice}`
+		);
+		this.stats.highestPrice = undefined;
+	}
+
 	// Filtrar y validar precios correctamente
 	const amounts = prices
 		.map((p) => {
@@ -329,14 +358,17 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 };
 
 // Método para verificar si un precio amerita alerta
-routeMonitorSchema.methods.shouldAlert = function (price) {
+routeMonitorSchema.methods.shouldAlert = function (flight) {
 	if (!this.notifications.enabled) return false;
-	if (price.amount > this.priceThreshold) return false;
+
+	// Soportar tanto objeto flight ({price: {amount}}) como precio directo ({amount})
+	const amount = flight.price?.amount ?? flight.amount;
+	if (!amount || amount > this.priceThreshold) return false;
 
 	if (
 		this.notifications.onlyNewLows &&
 		this.bestPrice &&
-		price.amount >= this.bestPrice.amount
+		amount >= this.bestPrice.amount
 	) {
 		return false;
 	}

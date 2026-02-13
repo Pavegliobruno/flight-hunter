@@ -275,27 +275,34 @@ class MonitoringService {
 				routeMonitor.stats.totalChecks += 1;
 			}
 
-			// Verificar si debe enviar alerta
-			if (bestPrice && routeMonitor.shouldAlert(bestPrice)) {
-				const alertSent = await this.sendPriceAlert(bestPrice, routeMonitor);
+			// Fix 3: Actualizar bestPrice siempre que se encuentre un precio mejor
+			if (
+				bestPrice &&
+				(!routeMonitor.bestPrice ||
+					bestPrice.price.amount < routeMonitor.bestPrice.amount)
+			) {
+				routeMonitor.bestPrice = {
+					amount: bestPrice.price.amount,
+					currency: bestPrice.price.currency,
+					flightId: bestPrice.id,
+					foundAt: new Date(),
+				};
+			}
 
-				if (alertSent) {
-					// Actualizar mejor precio si es menor
-					if (
-						!routeMonitor.bestPrice ||
-						bestPrice.price.amount < routeMonitor.bestPrice.amount
-					) {
-						routeMonitor.bestPrice = {
-							amount: bestPrice.price.amount,
-							currency: bestPrice.price.currency,
-							flightId: bestPrice.id,
-							foundAt: new Date(),
-						};
+			// Fix 2: Intentar enviar alerta, si el más barato es duplicado probar el siguiente
+			if (allFlights.length > 0) {
+				const candidates = allFlights
+					.filter((f) => routeMonitor.shouldAlert(f))
+					.sort((a, b) => a.price.amount - b.price.amount);
+
+				for (const flight of candidates) {
+					const alertSent = await this.sendPriceAlert(flight, routeMonitor);
+					if (alertSent) {
+						routeMonitor.notifications.telegram.lastSent = new Date();
+						routeMonitor.stats.alertsSent++;
+						this.stats.alertsToday++;
+						break;
 					}
-
-					routeMonitor.notifications.telegram.lastSent = new Date();
-					routeMonitor.stats.alertsSent++;
-					this.stats.alertsToday++;
 				}
 			}
 
