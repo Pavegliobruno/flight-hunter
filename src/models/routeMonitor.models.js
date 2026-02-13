@@ -274,33 +274,23 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 
 	this.stats.totalChecks += 1;
 
-	// Fix 4: Resetear stats corruptos antes de calcular
-	if (
-		this.stats.averagePrice &&
-		(!isFinite(this.stats.averagePrice) || this.stats.averagePrice > 50000)
-	) {
-		console.log(
-			`🔧 Reseteando averagePrice corrupto: ${this.stats.averagePrice}`
-		);
-		this.stats.averagePrice = undefined;
+	// Fix 4: Resetear stats corruptos antes de calcular (usando unset para Mongoose)
+	const corruptFields = [];
+	if (this.stats.averagePrice && (!isFinite(this.stats.averagePrice) || this.stats.averagePrice > 50000)) {
+		corruptFields.push('stats.averagePrice');
 	}
-	if (
-		this.stats.lowestPrice &&
-		(!isFinite(this.stats.lowestPrice) || this.stats.lowestPrice > 50000)
-	) {
-		console.log(
-			`🔧 Reseteando lowestPrice corrupto: ${this.stats.lowestPrice}`
-		);
-		this.stats.lowestPrice = undefined;
+	if (this.stats.lowestPrice && (!isFinite(this.stats.lowestPrice) || this.stats.lowestPrice > 50000)) {
+		corruptFields.push('stats.lowestPrice');
 	}
-	if (
-		this.stats.highestPrice &&
-		(!isFinite(this.stats.highestPrice) || this.stats.highestPrice > 50000)
-	) {
-		console.log(
-			`🔧 Reseteando highestPrice corrupto: ${this.stats.highestPrice}`
-		);
-		this.stats.highestPrice = undefined;
+	if (this.stats.highestPrice && (!isFinite(this.stats.highestPrice) || this.stats.highestPrice > 50000)) {
+		corruptFields.push('stats.highestPrice');
+	}
+	if (corruptFields.length > 0) {
+		console.log(`🔧 Reseteando stats corruptos: ${corruptFields.join(', ')}`);
+		for (const field of corruptFields) {
+			this.set(field, undefined);
+		}
+		this.markModified('stats');
 	}
 
 	// Filtrar y validar precios correctamente

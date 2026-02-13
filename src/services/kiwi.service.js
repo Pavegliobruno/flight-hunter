@@ -571,23 +571,8 @@ class KiwiService {
 						return;
 					}
 
-					// 🔥 VALIDACIÓN: Verificar destinos correctos
-					// Solo validar cuando NO es un ID de ciudad (que contiene '_')
-					// Los IDs de ciudad como "buenos-aires_ba_ar" retornan aeropuertos como EZE, AEP
-					const expectedOrigin = searchQuery.origin;
-					const actualOrigin = outboundSegment.source?.station?.code;
-
-					// Si el origen esperado es un código IATA (3 letras, sin '_'), validar estrictamente
-					const isOriginIataCode =
-						expectedOrigin &&
-						expectedOrigin.length === 3 &&
-						!expectedOrigin.includes('_');
-					if (isOriginIataCode && actualOrigin !== expectedOrigin) {
-						console.warn(
-							`⚠️ Origen incorrecto. Esperado: ${expectedOrigin}, Actual: ${actualOrigin}`
-						);
-						return;
-					}
+					// Nota: No validamos origen porque Kiwi ya filtra por el origen que le pedimos.
+					// Códigos de ciudad (BUE) retornan aeropuertos individuales (EZE, AEP) y eso es correcto.
 
 					// 🔥 VALIDACIÓN MEJORADA: Para vuelos con escalas, validar el destino final
 					const finalDestination = this.getFinalDestination(itinerary.outbound);
