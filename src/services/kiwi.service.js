@@ -380,6 +380,7 @@ class KiwiService {
 			// Obtener moneda del routeMonitor o usar EUR por defecto
 			const currency = routeMonitor?.currency?.toLowerCase() || 'eur';
 			console.log(`💱 Moneda para búsqueda: ${currency} (monitor: ${routeMonitor?.currency || 'no definida'})`);
+			console.log(`💰 Filtro de precio: max ${apiFilters.price?.end || 'sin límite'} | threshold: ${routeMonitor?.priceThreshold || 'N/A'}`);
 
 			const variables = {
 				search: searchObject,
