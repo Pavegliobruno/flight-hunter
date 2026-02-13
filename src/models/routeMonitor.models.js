@@ -272,27 +272,6 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 		return;
 	}
 
-	this.stats.totalChecks += 1;
-
-	// Fix 4: Resetear stats corruptos antes de calcular (usando unset para Mongoose)
-	const corruptFields = [];
-	if (this.stats.averagePrice && (!isFinite(this.stats.averagePrice) || this.stats.averagePrice > 50000)) {
-		corruptFields.push('stats.averagePrice');
-	}
-	if (this.stats.lowestPrice && (!isFinite(this.stats.lowestPrice) || this.stats.lowestPrice > 50000)) {
-		corruptFields.push('stats.lowestPrice');
-	}
-	if (this.stats.highestPrice && (!isFinite(this.stats.highestPrice) || this.stats.highestPrice > 50000)) {
-		corruptFields.push('stats.highestPrice');
-	}
-	if (corruptFields.length > 0) {
-		console.log(`🔧 Reseteando stats corruptos: ${corruptFields.join(', ')}`);
-		for (const field of corruptFields) {
-			this.set(field, undefined);
-		}
-		this.markModified('stats');
-	}
-
 	// Filtrar y validar precios correctamente
 	const amounts = prices
 		.map((p) => {
@@ -305,46 +284,69 @@ routeMonitorSchema.methods.updateStats = function (prices) {
 			return null;
 		})
 		.filter((amount) => {
-			// Filtrar valores válidos
 			return (
 				amount !== null &&
 				!isNaN(amount) &&
 				isFinite(amount) &&
 				amount > 0 &&
 				amount < 10000
-			); // Máximo razonable
+			);
 		});
 
 	console.log(
 		`📊 Precios válidos para stats: ${amounts.length}/${prices.length}`
 	);
 
+	// Reconstruir stats completo para evitar problemas de Mongoose con subdocumentos
+	const currentStats = this.stats.toObject ? this.stats.toObject() : {...this.stats};
+	const newStats = {
+		totalChecks: (currentStats.totalChecks || 0) + 1,
+		alertsSent: currentStats.alertsSent || 0,
+	};
+
 	if (amounts.length > 0) {
 		const avg = amounts.reduce((a, b) => a + b, 0) / amounts.length;
 		const min = Math.min(...amounts);
 		const max = Math.max(...amounts);
 
-		// Validar que los cálculos sean números válidos
-		if (!isNaN(avg) && isFinite(avg)) {
-			this.stats.averagePrice = Math.round(avg * 100) / 100; // Redondear a 2 decimales
+		newStats.averagePrice = Math.round(avg * 100) / 100;
+
+		// Para lowestPrice, comparar con el valor anterior solo si es válido
+		const prevLowest = currentStats.lowestPrice;
+		if (prevLowest && isFinite(prevLowest) && prevLowest > 0 && prevLowest < 10000) {
+			newStats.lowestPrice = Math.min(prevLowest, min);
+		} else {
+			newStats.lowestPrice = min;
 		}
 
-		if (!isNaN(min) && isFinite(min)) {
-			this.stats.lowestPrice = Math.min(this.stats.lowestPrice || min, min);
-		}
-
-		if (!isNaN(max) && isFinite(max)) {
-			this.stats.highestPrice = Math.max(this.stats.highestPrice || max, max);
+		// Para highestPrice, comparar con el valor anterior solo si es válido
+		const prevHighest = currentStats.highestPrice;
+		if (prevHighest && isFinite(prevHighest) && prevHighest > 0 && prevHighest < 10000) {
+			newStats.highestPrice = Math.max(prevHighest, max);
+		} else {
+			newStats.highestPrice = max;
 		}
 
 		console.log(
-			`📊 Stats actualizados: avg=€${this.stats.averagePrice}, min=€${this.stats.lowestPrice}, max=€${this.stats.highestPrice}`
+			`📊 Stats actualizados: avg=€${newStats.averagePrice}, min=€${newStats.lowestPrice}, max=€${newStats.highestPrice}`
 		);
 	} else {
-		console.log(
-			'📊 No se encontraron precios válidos para actualizar estadísticas'
-		);
+		// Mantener los valores anteriores si son válidos
+		if (currentStats.averagePrice && isFinite(currentStats.averagePrice) && currentStats.averagePrice < 10000) {
+			newStats.averagePrice = currentStats.averagePrice;
+		}
+		if (currentStats.lowestPrice && isFinite(currentStats.lowestPrice) && currentStats.lowestPrice < 10000) {
+			newStats.lowestPrice = currentStats.lowestPrice;
+		}
+		if (currentStats.highestPrice && isFinite(currentStats.highestPrice) && currentStats.highestPrice < 10000) {
+			newStats.highestPrice = currentStats.highestPrice;
+		}
+		console.log('📊 No se encontraron precios válidos para actualizar estadísticas');
 	}
+
+	// Reemplazar el objeto stats completo para que Mongoose lo detecte
+	this.set('stats', newStats);
+	this.markModified('stats');
 };
 
 // Método para verificar si un precio amerita alerta
