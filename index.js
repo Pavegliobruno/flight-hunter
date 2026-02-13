@@ -164,6 +164,35 @@ app.post('/monitors/:id/check', async (req, res) => {
 	}
 });
 
+// Forzar verificación de TODAS las rutas (ignora lastChecked)
+app.post('/monitors/check-all', async (req, res) => {
+	try {
+		const routes = await RouteMonitor.find({isActive: true});
+		console.log(`🔍 Forzando verificación de ${routes.length} rutas`);
+
+		// Ejecutar en background
+		(async () => {
+			for (const route of routes) {
+				try {
+					await monitoringService.checkRoute(route);
+					await new Promise((r) => setTimeout(r, 5000));
+				} catch (err) {
+					console.error(`❌ Error verificando ${route.name}:`, err.message);
+				}
+			}
+			console.log('✅ Verificación forzada completada');
+		})();
+
+		res.json({
+			success: true,
+			message: `Verificación iniciada para ${routes.length} rutas`,
+			routes: routes.map((r) => r.name),
+		});
+	} catch (error) {
+		res.status(500).json({error: error.message});
+	}
+});
+
 // ========================
 // INICIALIZACIÓN
 // ========================
