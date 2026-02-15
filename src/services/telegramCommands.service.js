@@ -527,7 +527,9 @@ Ida: ${idaStr}`;
 			message += `\nVuelta: ${vueltaStr}`;
 		}
 
+		const stopsText = monitor.maxStops !== null && monitor.maxStops !== undefined ? `${monitor.maxStops}` : 'sin límite';
 		message += `\nLímite: ${symbol}${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\n🔄 Escalas: ${stopsText}`;
 		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		// Botones según estado
@@ -2135,7 +2137,9 @@ Ida: ${idaStr}`;
 			message += `\nVuelta: ${vueltaStr}`;
 		}
 
+		const stopsText = monitor.maxStops !== null && monitor.maxStops !== undefined ? `${monitor.maxStops}` : 'sin límite';
 		message += `\nLímite: ${symbol}${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\n🔄 Escalas: ${stopsText}`;
 		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		const buttons = [];
@@ -2349,7 +2353,9 @@ Ida: ${idaStr}`;
 			message += `\nVuelta: ${vueltaStr}`;
 		}
 
+		const stopsText = monitor.maxStops !== null && monitor.maxStops !== undefined ? `${monitor.maxStops}` : 'sin límite';
 		message += `\nLímite: ${symbol}${monitor.priceThreshold} | Mejor: ${bestPrice} | ${status}`;
+		message += `\n🔄 Escalas: ${stopsText}`;
 		message += `\n📬 Ofertas enviadas: ${alertsSent}`;
 
 		const buttons = [];
