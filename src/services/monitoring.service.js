@@ -53,6 +53,7 @@ class MonitoringService {
 				await this.sendDailyReport();
 				await this.cleanupOldFlights();
 				await this.cleanupExpiredMonitors();
+				await this.resetBestPrices();
 				this.resetDailyStats();
 			},
 			{
@@ -464,6 +465,21 @@ class MonitoringService {
 			}
 		} catch (error) {
 			console.error('Error en limpieza de monitores expirados:', error);
+		}
+	}
+
+	async resetBestPrices() {
+		try {
+			const result = await RouteMonitor.updateMany(
+				{'bestPrice.amount': {$exists: true}},
+				{$unset: {bestPrice: ''}}
+			);
+
+			if (result.modifiedCount > 0) {
+				console.log(`🔄 bestPrice reseteado en ${result.modifiedCount} monitores`);
+			}
+		} catch (error) {
+			console.error('Error reseteando bestPrices:', error);
 		}
 	}
 
